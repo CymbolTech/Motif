@@ -1,0 +1,14 @@
+version: "2"
+
+sql:
+  - engine: postgresql
+    schema:
+      - apps/migrate/migrations/000001_foundation.up.sql
+      - apps/migrate/migrations/000002_events.up.sql
+      - apps/migrate/migrations/000003_event_types.up.sql
+    queries: internal/db/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/dbgen
+        sql_package: pgx/v5

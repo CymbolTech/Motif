@@ -1,0 +1,11 @@
+{
+  "name": "api",
+  "root": "apps/api",
+  "projectType": "application",
+  "targets": {
+    "build": { "command": "go build -o dist/api ./apps/api", "options": { "cwd": "." }, "outputs": ["{workspaceRoot}/dist/api"] },
+    "test": { "command": "go test ./apps/api/... ./internal/...", "options": { "cwd": "." } },
+    "lint": { "command": "go vet ./apps/api/... ./internal/...", "options": { "cwd": "." } }
+  },
+  "tags": ["scope:backend", "type:app"]
+}

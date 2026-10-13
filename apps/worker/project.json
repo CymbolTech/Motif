@@ -1,0 +1,11 @@
+{
+  "name": "worker",
+  "root": "apps/worker",
+  "projectType": "application",
+  "targets": {
+    "build": { "command": "go build -o dist/worker ./apps/worker", "options": { "cwd": "." }, "outputs": ["{workspaceRoot}/dist/worker"] },
+    "test": { "command": "go test ./apps/worker/...", "options": { "cwd": "." } },
+    "lint": { "command": "go vet ./apps/worker/...", "options": { "cwd": "." } }
+  },
+  "tags": ["scope:backend", "type:app"]
+}

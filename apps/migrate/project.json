@@ -1,0 +1,11 @@
+{
+  "name": "migrate",
+  "root": "apps/migrate",
+  "projectType": "application",
+  "targets": {
+    "build": { "command": "go build -o dist/migrate ./apps/migrate", "options": { "cwd": "." }, "outputs": ["{workspaceRoot}/dist/migrate"] },
+    "test": { "command": "go test ./apps/migrate/...", "options": { "cwd": "." } },
+    "lint": { "command": "go vet ./apps/migrate/...", "options": { "cwd": "." } }
+  },
+  "tags": ["scope:backend", "type:app"]
+}

@@ -1,0 +1,25 @@
+{
+  "name": "dashboard",
+  "root": "apps/dashboard",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "command": "pnpm --dir apps/dashboard build",
+      "options": { "cwd": "." },
+      "outputs": ["{workspaceRoot}/apps/dashboard/dist"]
+    },
+    "test": {
+      "command": "pnpm --dir apps/dashboard test",
+      "options": { "cwd": "." }
+    },
+    "lint": {
+      "command": "pnpm --dir apps/dashboard lint",
+      "options": { "cwd": "." }
+    },
+    "serve": {
+      "command": "pnpm --dir apps/dashboard dev --host 0.0.0.0",
+      "options": { "cwd": "." }
+    }
+  },
+  "tags": ["scope:frontend", "type:app"]
+}

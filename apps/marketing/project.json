@@ -1,0 +1,25 @@
+{
+  "name": "marketing",
+  "root": "apps/marketing",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "command": "pnpm --dir apps/marketing build",
+      "options": { "cwd": "." },
+      "outputs": ["{workspaceRoot}/apps/marketing/.output", "{workspaceRoot}/apps/marketing/dist"]
+    },
+    "test": {
+      "command": "pnpm --dir apps/marketing test",
+      "options": { "cwd": "." }
+    },
+    "lint": {
+      "command": "pnpm --dir apps/marketing lint",
+      "options": { "cwd": "." }
+    },
+    "serve": {
+      "command": "pnpm --dir apps/marketing dev",
+      "options": { "cwd": "." }
+    }
+  },
+  "tags": ["scope:frontend", "type:app"]
+}

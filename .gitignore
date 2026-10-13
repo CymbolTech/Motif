@@ -1,0 +1,15 @@
+.env
+.nx/
+node_modules/
+dist/
+.output/
+coverage/
+*.log
+.env
+.impeccable
+.github
+.nx
+docs
+Docs
+*.md
+pnpm-lock.yaml
