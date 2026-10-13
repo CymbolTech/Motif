@@ -41,3 +41,26 @@ func TestLoadRequiresHTTPProviderURL(t *testing.T) {
 		t.Fatal("Load() error = nil, want missing HTTP provider URL error")
 	}
 }
+
+func TestLoadRejectsDefaultSecretsInProduction(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example/db")
+	t.Setenv("MOTIF_RUNTIME_ENV", "production")
+	t.Setenv("MOTIF_CORS_ORIGINS", "https://console.example")
+	t.Setenv("MOTIF_REWARD_PROVIDER_ENCRYPTION_KEY", "production-key")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want default secret rejection")
+	}
+}
+
+func TestLoadRequiresProductionEncryptionKey(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://example/db")
+	t.Setenv("MOTIF_RUNTIME_ENV", "production")
+	t.Setenv("MOTIF_BOOTSTRAP_API_KEY", "bootstrap-production")
+	t.Setenv("MOTIF_ADMIN_API_KEY", "admin-production")
+	t.Setenv("MOTIF_ADMIN_PASSWORD", "password-production")
+	t.Setenv("MOTIF_CORS_ORIGINS", "https://console.example")
+	t.Setenv("MOTIF_REWARD_PROVIDER_ENCRYPTION_KEY", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want encryption key requirement")
+	}
+}

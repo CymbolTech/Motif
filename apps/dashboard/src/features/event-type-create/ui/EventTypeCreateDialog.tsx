@@ -5,6 +5,7 @@ import { createEventType, type EventType, type Tenant } from '../../../shared/ap
 type EventTypeCreateDialogProps = {
   open: boolean;
   tenants: Tenant[];
+  activeScope?: Tenant;
   onClose: () => void;
   onCreated: (eventType: EventType) => void;
 };
@@ -16,7 +17,7 @@ const initialForm = {
   schema: '{\n  "required": []\n}',
 };
 
-export function EventTypeCreateDialog({ open, tenants, onClose, onCreated }: EventTypeCreateDialogProps) {
+export function EventTypeCreateDialog({ open, tenants, activeScope, onClose, onCreated }: EventTypeCreateDialogProps) {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -24,12 +25,12 @@ export function EventTypeCreateDialog({ open, tenants, onClose, onCreated }: Eve
 
   useEffect(() => {
     if (open) {
-      const firstTenant = tenants[0];
-      setForm({ ...initialForm, tenant_id: firstTenant?.tenant_id ?? '', environment_id: firstTenant?.environment_id ?? '' });
+      const selectedTenant = tenants.find((tenant) => tenant.tenant_id === activeScope?.tenant_id && tenant.environment_id === activeScope?.environment_id) ?? tenants[0];
+      setForm({ ...initialForm, tenant_id: selectedTenant?.tenant_id ?? '', environment_id: selectedTenant?.environment_id ?? '' });
       setError(null);
       setCreated(false);
     }
-  }, [open, tenants]);
+  }, [open, tenants, activeScope]);
 
   if (!open) return null;
 

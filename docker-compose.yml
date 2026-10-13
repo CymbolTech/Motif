@@ -53,6 +53,7 @@ services:
         APP: api
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-motif}:${POSTGRES_PASSWORD:-motif_local_only}@postgres:5432/${POSTGRES_DB:-motif}?sslmode=disable
+      MOTIF_RUNTIME_ENV: ${MOTIF_RUNTIME_ENV:-development}
       NATS_URL: nats://nats:4222
       API_ADDR: 0.0.0.0:8080
       MOTIF_BOOTSTRAP_API_KEY: ${MOTIF_BOOTSTRAP_API_KEY:-dev_only_change_me}
@@ -93,6 +94,11 @@ services:
         APP: worker
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-motif}:${POSTGRES_PASSWORD:-motif_local_only}@postgres:5432/${POSTGRES_DB:-motif}?sslmode=disable
+      MOTIF_RUNTIME_ENV: ${MOTIF_RUNTIME_ENV:-development}
+      MOTIF_BOOTSTRAP_API_KEY: ${MOTIF_BOOTSTRAP_API_KEY:-dev_only_change_me}
+      MOTIF_ADMIN_API_KEY: ${MOTIF_ADMIN_API_KEY:-admin_dev_only_change_me}
+      MOTIF_ADMIN_PASSWORD: ${MOTIF_ADMIN_PASSWORD:-admin_dev_only_change_me}
+      MOTIF_CORS_ORIGINS: ${MOTIF_CORS_ORIGINS:-http://127.0.0.1:4173}
       NATS_URL: nats://nats:4222
       WORKER_HEALTH_ADDR: 0.0.0.0:8081
       MOTIF_REWARD_PROVIDER: ${MOTIF_REWARD_PROVIDER:-mock}

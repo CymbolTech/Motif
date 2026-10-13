@@ -28,6 +28,19 @@ type Handler struct {
 	metrics  *observability.Metrics
 }
 
+// RedeemForAdmin lets the authenticated admin console exercise the same
+// durable redemption state machine without requiring a raw integration key in
+// the browser. The scope is authorized by the admin handler before this call.
+func (h *Handler) RedeemForAdmin(ctx context.Context, scope points.Scope, rewardID, externalUserID, idempotencyKey string) (Redemption, error) {
+	return h.redeem(ctx, scope, rewardID, redemptionRequest{ExternalUserID: externalUserID, IdempotencyKey: idempotencyKey})
+}
+
+// RetryForAdmin performs the same retry-safe transition used by the public
+// integration route for a server-authorized admin scope.
+func (h *Handler) RetryForAdmin(ctx context.Context, scope points.Scope, redemptionID string) (Redemption, error) {
+	return h.retry(ctx, scope, redemptionID)
+}
+
 func NewHandler(db *pgxpool.Pool, provider Provider, metrics ...*observability.Metrics) http.Handler {
 	return NewHandlerWithResolver(db, StaticProviderResolver{Provider: provider}, metrics...)
 }
@@ -270,6 +283,8 @@ func (h *Handler) retryRedemption(w http.ResponseWriter, r *http.Request, scope 
 }
 
 var errRedemptionNotRetryable = errors.New("redemption is not retryable")
+
+var ErrRedemptionNotRetryable = errRedemptionNotRetryable
 
 func (h *Handler) retry(ctx context.Context, scope points.Scope, redemptionID string) (Redemption, error) {
 	var redemption Redemption

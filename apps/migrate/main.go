@@ -48,7 +48,7 @@ func up(ctx context.Context, conn *pgx.Conn) error {
 	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version bigint PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return err
 	}
-	for _, migration := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23} {
+	for _, migration := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25} {
 		var applied int
 		if err := conn.QueryRow(ctx, `SELECT count(*) FROM schema_migrations WHERE version = $1`, migration).Scan(&applied); err != nil {
 			return err
@@ -171,6 +171,12 @@ func migrationName(version int) string {
 	}
 	if version == 23 {
 		return "conversion_lot_backfill"
+	}
+	if version == 24 {
+		return "engagement_extensions"
+	}
+	if version == 25 {
+		return "measurement_foundation"
 	}
 	return strconv.Itoa(version)
 }

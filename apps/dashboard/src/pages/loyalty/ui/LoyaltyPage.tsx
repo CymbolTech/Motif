@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { IconArrowDownRight, IconCircleCheck, IconCoin, IconGift, IconRefresh, IconSparkles, IconTicket } from '@tabler/icons-react';
 import { CatalogAdminPanel } from '../../../features/catalog-admin/ui/CatalogAdminPanel';
-import { fetchAdminRedemptions, fetchRewards, fetchUserAchievements, fetchUserMissions, fetchUserPoints, fetchUserProgression, fetchUserTransactions, redeemReward, retryRedemption, type AdminRedemption, type PointBalance, type PointTransaction, type Redemption, type Reward, type UserAchievement, type UserMission, type UserProgression } from '../../../shared/api/client';
+import { createAdminPointTransaction, fetchAdminRedemptions, fetchAdminUserProfile, fetchAdminUserTransactions, fetchRedemptionAttempts, fetchRewards, redeemAdminReward, retryAdminRedemption, type AdminRedemption, type PointBalance, type PointTransaction, type Redemption, type RedemptionAttempt, type Reward, type UserAchievement, type UserMission, type UserProgression } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
 
 type LoyaltyData = {
@@ -26,6 +26,11 @@ export function LoyaltyPage() {
   const [lastRedemption, setLastRedemption] = useState<Redemption | null>(null);
   const [ledgerCursor, setLedgerCursor] = useState<string | undefined>();
   const [ledgerLoadingMore, setLedgerLoadingMore] = useState(false);
+  const [attemptsByRedemption, setAttemptsByRedemption] = useState<Record<string, RedemptionAttempt[]>>({});
+  const [openAttempts, setOpenAttempts] = useState<string | null>(null);
+  const [attemptsLoading, setAttemptsLoading] = useState<string | null>(null);
+  const [ledgerForm, setLedgerForm] = useState({ type: 'award' as 'award' | 'spend', currency: '', amount: '10' });
+  const [ledgerSaving, setLedgerSaving] = useState(false);
 
   const refresh = useCallback(async (targetUser = userId) => {
     setLoading(true);
@@ -35,17 +40,13 @@ export function LoyaltyPage() {
         setError(scopeError ?? 'Select a tenant environment to inspect loyalty data.');
         return;
       }
-      const [points, transactions, missions, achievements, progression, catalog, recentRedemptions] = await Promise.all([
-        fetchUserPoints(targetUser),
-        fetchUserTransactions(targetUser),
-        fetchUserMissions(targetUser),
-        fetchUserAchievements(targetUser),
-        fetchUserProgression(targetUser),
+      const [profile, catalog, recentRedemptions] = await Promise.all([
+        fetchAdminUserProfile(scope, targetUser),
         fetchRewards(scope),
         fetchAdminRedemptions(8, { tenant_id: scope.tenant_id, environment_id: scope.environment_id }),
       ]);
-      setData({ balances: points.balances, transactions: transactions.transactions, missions: missions.missions, achievements: achievements.achievements, progression });
-      setLedgerCursor(transactions.next_cursor);
+      setData({ balances: profile.balances, transactions: profile.transactions, missions: profile.missions, achievements: profile.achievements, progression: profile.progression });
+      setLedgerCursor(profile.next_cursor);
       setRewards(catalog.filter((reward) => reward.active));
       setRedemptions(recentRedemptions);
     } catch (refreshError) {
@@ -56,6 +57,7 @@ export function LoyaltyPage() {
   }, [scope, scopeError, userId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { setLastRedemption(null); }, [scope?.tenant_id, scope?.environment_id]);
 
   function handleUserSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,7 +70,8 @@ export function LoyaltyPage() {
     setRedeeming(reward.id);
     setError(null);
     try {
-      const redemption = await redeemReward(reward.id, {
+      if (!scope) throw new Error('Select a tenant environment before redeeming a reward.');
+      const redemption = await redeemAdminReward(scope, reward.id, {
         external_user_id: userId,
         idempotency_key: `console-${reward.id}-${userId}`,
       });
@@ -85,7 +88,8 @@ export function LoyaltyPage() {
     setRetrying(redemption.id);
     setError(null);
     try {
-      const retried = await retryRedemption(redemption.id);
+      if (!scope) throw new Error('Select a tenant environment before retrying a redemption.');
+      const retried = await retryAdminRedemption(scope, redemption.id);
       setLastRedemption(retried);
       await refresh(userId);
     } catch (retryError) {
@@ -99,7 +103,8 @@ export function LoyaltyPage() {
     if (!ledgerCursor) return;
     setLedgerLoadingMore(true);
     try {
-      const next = await fetchUserTransactions(userId, 12, ledgerCursor);
+      if (!scope) throw new Error('Select a tenant environment before loading the ledger.');
+      const next = await fetchAdminUserTransactions(scope, userId, 12, ledgerCursor);
       setData((current) => ({ ...current, transactions: [...current.transactions, ...next.transactions] }));
       setLedgerCursor(next.next_cursor);
     } catch (loadError) {
@@ -107,6 +112,35 @@ export function LoyaltyPage() {
     } finally {
       setLedgerLoadingMore(false);
     }
+  }
+
+  async function toggleAttempts(redemption: AdminRedemption) {
+    if (!scope) return;
+    if (openAttempts === redemption.id) { setOpenAttempts(null); return; }
+    setOpenAttempts(redemption.id);
+    if (attemptsByRedemption[redemption.id]) return;
+    setAttemptsLoading(redemption.id);
+    try {
+      const attempts = await fetchRedemptionAttempts(redemption.id, scope);
+      setAttemptsByRedemption((current) => ({ ...current, [redemption.id]: attempts }));
+    } catch (attemptError) {
+      setError(attemptError instanceof Error ? attemptError.message : 'Redemption attempts could not be loaded.');
+    } finally { setAttemptsLoading(null); }
+  }
+
+  async function submitLedger(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!scope) return;
+    const amount = Number(ledgerForm.amount);
+    if (!ledgerForm.currency || !Number.isInteger(amount) || amount <= 0) { setError('Choose a currency and a positive whole number.'); return; }
+    setLedgerSaving(true);
+    setError(null);
+    try {
+      await createAdminPointTransaction({ tenant_id: scope.tenant_id, environment_id: scope.environment_id, external_user_id: userId, currency: ledgerForm.currency, amount, type: ledgerForm.type, idempotency_key: `console-${ledgerForm.type}-${userId}-${ledgerForm.currency}-${Date.now()}`, provenance: { source: 'admin_console' } });
+      await refresh(userId);
+    } catch (ledgerError) {
+      setError(ledgerError instanceof Error ? ledgerError.message : 'Point transaction could not be recorded.');
+    } finally { setLedgerSaving(false); }
   }
 
   const totalPoints = useMemo(() => data.balances.filter((balance) => balance.currency !== 'xp').reduce((total, balance) => total + balance.balance, 0), [data.balances]);
@@ -130,6 +164,16 @@ export function LoyaltyPage() {
         <div className={`loyalty-context ${scopeLoading ? 'loading' : ''}`}><span className="status-dot" />Live tenant scope<strong>{scope ? `${scope.tenant_id} / ${scope.environment_id}` : scopeLoading ? 'Loading…' : 'Unavailable'}</strong></div>
       </section>
 
+      <section className="panel ledger-controls" aria-labelledby="ledger-controls-title">
+        <div className="panel-heading"><div><span className="section-label">Operations / ledger</span><h2 id="ledger-controls-title">Award or spend points</h2></div><span className="execution-count">{scope ? `${scope.tenant_id} / ${scope.environment_id}` : 'No scope'}</span></div>
+        <form className="ledger-controls-form" onSubmit={(event) => void submitLedger(event)}>
+          <label><span>Operation</span><select value={ledgerForm.type} onChange={(event) => setLedgerForm({ ...ledgerForm, type: event.target.value as 'award' | 'spend' })}><option value="award">Award</option><option value="spend">Spend</option></select></label>
+          <label><span>Currency</span><select required value={ledgerForm.currency} onChange={(event) => setLedgerForm({ ...ledgerForm, currency: event.target.value })}><option value="">Select currency</option>{data.balances.map((balance) => <option key={balance.currency_id} value={balance.currency}>{balance.name} · {balance.currency}</option>)}</select></label>
+          <label><span>Amount</span><input required type="number" min="1" step="1" value={ledgerForm.amount} onChange={(event) => setLedgerForm({ ...ledgerForm, amount: event.target.value })} /></label>
+          <button className="primary-button" type="submit" disabled={ledgerSaving || !scope}>{ledgerSaving ? 'Recording…' : 'Record transaction'}</button>
+        </form>
+      </section>
+
       <CatalogAdminPanel tenant={scope} onChanged={() => void refresh(userId)} />
 
       {error && <div className="inline-state error-state loyalty-error" role="alert"><strong>Loyalty workspace unavailable</strong><span>{error}</span></div>}
@@ -149,7 +193,7 @@ export function LoyaltyPage() {
 
         <section className="panel rewards-panel" aria-labelledby="rewards-title">
           <div className="panel-heading"><div><span className="section-label">Catalog / digital unlocks</span><h2 id="rewards-title">Rewards</h2></div><IconGift size={19} stroke={1.5} /></div>
-          {loading ? <div className="registry-loading"><div /><div /></div> : rewards.length === 0 ? <div className="inline-state empty-state"><IconGift size={20} /><strong>Catalog is empty</strong><span>Create a reward from the admin API to make it redeemable.</span></div> : <ul className="reward-list">{rewards.map((reward) => { const balance = balanceFor(reward.cost_currency); const cost = reward.cost_amount ?? 0; const canRedeem = !cost || balance >= cost; return <li className="reward-card" key={reward.id}><div className="reward-card-top"><span className="reward-icon"><IconGift size={16} /></span><span><strong>{reward.name}</strong><small>{reward.description || 'Digital unlock'}</small></span></div><div className="reward-card-bottom"><span>{cost ? `${cost} ${reward.cost_currency}` : 'Free'}</span><button className="text-button accent" type="button" disabled={!canRedeem || redeeming === reward.id} onClick={() => void handleRedeem(reward)}>{redeeming === reward.id ? 'Delivering…' : canRedeem ? 'Redeem' : 'Need points'}</button></div></li>; })}</ul>}
+          {loading ? <div className="registry-loading"><div /><div /></div> : rewards.length === 0 ? <div className="inline-state empty-state"><IconGift size={20} /><strong>Catalog is empty</strong><span>Use Add configuration above to create the first reward in this scope.</span></div> : <ul className="reward-list">{rewards.map((reward) => { const balance = balanceFor(reward.cost_currency); const cost = reward.cost_amount ?? 0; const canRedeem = !cost || balance >= cost; return <li className="reward-card" key={reward.id}><div className="reward-card-top"><span className="reward-icon"><IconGift size={16} /></span><span><strong>{reward.name}</strong><small>{reward.description || 'Digital unlock'}</small></span></div><div className="reward-card-bottom"><span>{cost ? `${cost} ${reward.cost_currency}` : 'Free'}</span><button className="text-button accent" type="button" disabled={!canRedeem || redeeming === reward.id} onClick={() => void handleRedeem(reward)}>{redeeming === reward.id ? 'Delivering…' : canRedeem ? 'Redeem' : 'Need points'}</button></div></li>; })}</ul>}
         </section>
       </div>
 
@@ -160,7 +204,7 @@ export function LoyaltyPage() {
 
       <section className="panel redemptions-panel" aria-labelledby="redemptions-title">
         <div className="panel-heading"><div><span className="section-label">Operations / provider state</span><h2 id="redemptions-title">Recent redemptions</h2></div><span className="execution-count"><IconGift size={14} />{redemptions.length} records</span></div>
-        {loading ? <div className="registry-loading"><div /><div /></div> : redemptions.length === 0 ? <div className="inline-state empty-state"><IconGift size={20} /><strong>No redemptions yet</strong><span>Successful and failed reward deliveries will appear here.</span></div> : <ul className="redemption-list">{redemptions.map((redemption) => <li key={redemption.id}><span className={`redemption-state ${redemption.status === 'fulfilled' ? 'fulfilled' : redemption.status === 'failed' ? 'failed' : ''}`}><span className="status-dot" />{redemption.status}</span><span className="redemption-copy"><strong>{redemption.reward_name}</strong><small>{redemption.external_user_id} · {new Date(redemption.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · {redemption.attempt_count ?? 0} attempts</small>{redemption.status === 'delivering' && <small>{redemption.reconciliation_attempts ?? 0} reconciliation checks{redemption.last_provider_check_error ? ` · ${redemption.last_provider_check_error}` : ''}</small>}</span><span className="redemption-reference">{redemption.provider_reference ?? redemption.id}</span>{redemption.status === 'failed' && redemption.external_user_id === userId && <button className="text-button accent" type="button" onClick={() => void handleRetry(redemption)} disabled={retrying === redemption.id}>{retrying === redemption.id ? 'Retrying…' : 'Retry'}</button>}</li>)}</ul>}
+        {loading ? <div className="registry-loading"><div /><div /></div> : redemptions.length === 0 ? <div className="inline-state empty-state"><IconGift size={20} /><strong>No redemptions yet</strong><span>Successful and failed reward deliveries will appear here.</span></div> : <ul className="redemption-list">{redemptions.map((redemption) => <li className="redemption-stack" key={redemption.id}><div className="redemption-row"><span className={`redemption-state ${redemption.status === 'fulfilled' ? 'fulfilled' : redemption.status === 'failed' ? 'failed' : ''}`}><span className="status-dot" />{redemption.status}</span><span className="redemption-copy"><strong>{redemption.reward_name}</strong><small>{redemption.external_user_id} · {new Date(redemption.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · {redemption.attempt_count ?? 0} attempts</small>{redemption.status === 'delivering' && <small>{redemption.reconciliation_attempts ?? 0} reconciliation checks{redemption.last_provider_check_error ? ` · ${redemption.last_provider_check_error}` : ''}</small>}</span><span className="redemption-reference">{redemption.provider_reference ?? redemption.id}</span>{redemption.status === 'failed' && redemption.external_user_id === userId && <button className="text-button accent" type="button" onClick={() => void handleRetry(redemption)} disabled={retrying === redemption.id}>{retrying === redemption.id ? 'Retrying…' : 'Retry'}</button>}<button className="text-button" type="button" onClick={() => void toggleAttempts(redemption)}>{openAttempts === redemption.id ? 'Hide attempts' : 'Attempts'}</button></div>{openAttempts === redemption.id && <div className="attempt-panel">{attemptsLoading === redemption.id ? <span>Loading attempts…</span> : (attemptsByRedemption[redemption.id] ?? []).length === 0 ? <span>No delivery attempts recorded.</span> : (attemptsByRedemption[redemption.id] ?? []).map((attempt) => <div className="attempt-row" key={attempt.id}><span className={`version-status ${attempt.status}`}>{attempt.kind}</span><span><strong>{attempt.status}</strong><small>{attempt.provider_state || attempt.error_message || 'No provider detail'} · {new Date(attempt.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</small></span></div>)}</div>}</li>)}</ul>}
       </section>
 
       {lastRedemption && <section className="redemption-receipt" aria-live="polite"><span className="receipt-icon"><IconCircleCheck size={15} /></span><span><strong>{lastRedemption.status === 'fulfilled' ? 'Reward fulfilled' : `Redemption ${lastRedemption.status}`}</strong><small>{lastRedemption.provider_reference ?? lastRedemption.id}</small></span><span className="receipt-status"><span className="status-dot" />provider delivery</span></section>}

@@ -55,6 +55,16 @@ func TestValidateTenantRequestRejectsUnsafeIDs(t *testing.T) {
 	}
 }
 
+func TestValidateEnvironmentRequest(t *testing.T) {
+	request, err := ValidateEnvironmentRequest(EnvironmentRequest{TenantID: " acme ", ID: " production ", Name: "Production"})
+	if err != nil {
+		t.Fatalf("ValidateEnvironmentRequest() error = %v", err)
+	}
+	if request.TenantID != "acme" || request.ID != "production" {
+		t.Fatalf("unexpected normalized environment: %+v", request)
+	}
+}
+
 func TestValidateRuleRequestAcceptsScheduleWindow(t *testing.T) {
 	starts := time.Date(2026, time.January, 2, 10, 0, 0, 0, time.UTC)
 	ends := starts.Add(time.Hour)
@@ -79,5 +89,74 @@ func TestValidateRuleRequestRejectsInvertedScheduleWindow(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("ValidateRuleRequest() error = nil, want inverted schedule error")
+	}
+}
+
+func TestValidateGoalAndCampaignRequests(t *testing.T) {
+	goal, err := ValidateGoalRequest(GoalRequest{TenantID: "acme", EnvironmentID: "sandbox", ID: "repeat_purchase", Name: "Repeat purchase", EventType: "order.completed", TargetCount: 2})
+	if err != nil || goal.ID != "repeat_purchase" {
+		t.Fatalf("ValidateGoalRequest() = %+v, %v", goal, err)
+	}
+	starts := time.Date(2026, time.January, 2, 10, 0, 0, 0, time.UTC)
+	ends := starts.Add(24 * time.Hour)
+	campaign, err := ValidateCampaignRequest(CampaignRequest{TenantID: "acme", EnvironmentID: "sandbox", ID: "january_return", GoalID: "repeat_purchase", Name: "January return", EventType: "order.completed", StartsAt: &starts, EndsAt: &ends})
+	if err != nil || campaign.GoalID != "repeat_purchase" {
+		t.Fatalf("ValidateCampaignRequest() = %+v, %v", campaign, err)
+	}
+}
+
+func TestValidateMetricRequest(t *testing.T) {
+	metric, err := ValidateMetricRequest(MetricRequest{TenantID: " acme ", EnvironmentID: " sandbox ", ID: "repeat_buyers", Name: "Repeat buyers", Description: "Users with a second order", EventType: "order.completed", Aggregation: "unique_users"})
+	if err != nil {
+		t.Fatalf("ValidateMetricRequest() error = %v", err)
+	}
+	if metric.TenantID != "acme" || metric.EnvironmentID != "sandbox" || metric.Aggregation != "unique_users" {
+		t.Fatalf("unexpected normalized metric: %+v", metric)
+	}
+}
+
+func TestValidateMetricRequestRejectsUnsupportedAggregation(t *testing.T) {
+	_, err := ValidateMetricRequest(MetricRequest{TenantID: "acme", EnvironmentID: "sandbox", ID: "orders", Name: "Orders", EventType: "order.completed", Aggregation: "sum"})
+	if err == nil {
+		t.Fatal("ValidateMetricRequest() error = nil, want unsupported aggregation error")
+	}
+}
+
+func TestValidateFunnelRequest(t *testing.T) {
+	request, err := ValidateFunnelRequest(FunnelRequest{TenantID: "acme", EnvironmentID: "sandbox", Steps: []FunnelStepRequest{{Name: "Viewed", EventType: "product.viewed"}, {Name: "Purchased", EventType: "order.completed"}}})
+	if err != nil || len(request.Steps) != 2 {
+		t.Fatalf("ValidateFunnelRequest() = %+v, %v", request, err)
+	}
+}
+
+func TestValidateFunnelRequestRejectsShortFunnel(t *testing.T) {
+	_, err := ValidateFunnelRequest(FunnelRequest{TenantID: "acme", EnvironmentID: "sandbox", Steps: []FunnelStepRequest{{Name: "Viewed", EventType: "product.viewed"}}})
+	if err == nil {
+		t.Fatal("ValidateFunnelRequest() error = nil, want at least two steps")
+	}
+}
+
+func TestValidateRetentionRequestDefaultsIntervals(t *testing.T) {
+	request, err := ValidateRetentionRequest(RetentionRequest{TenantID: "acme", EnvironmentID: "sandbox", CohortEventType: "signup.completed", ReturnEventType: "session.started"})
+	if err != nil || len(request.Intervals) != 3 || request.Intervals[1] != 7 {
+		t.Fatalf("ValidateRetentionRequest() = %+v, %v", request, err)
+	}
+}
+
+func TestValidateSegmentAndExperimentRequests(t *testing.T) {
+	segment, err := ValidateSegmentRequest(SegmentRequest{TenantID: "acme", EnvironmentID: "sandbox", EventType: "order.completed", MinEvents: 2})
+	if err != nil || segment.MinEvents != 2 {
+		t.Fatalf("ValidateSegmentRequest() = %+v, %v", segment, err)
+	}
+	experiment, err := ValidateExperimentRequest(ExperimentRequest{TenantID: "acme", EnvironmentID: "sandbox", ID: "checkout_copy", ConversionEvent: "order.completed", Variants: []ExperimentVariantRequest{{ID: "control", Weight: 50}, {ID: "variant", Weight: 50}}})
+	if err != nil || len(experiment.Variants) != 2 {
+		t.Fatalf("ValidateExperimentRequest() = %+v, %v", experiment, err)
+	}
+}
+
+func TestValidateExperimentRequestRejectsUnbalancedWeights(t *testing.T) {
+	_, err := ValidateExperimentRequest(ExperimentRequest{TenantID: "acme", EnvironmentID: "sandbox", ID: "checkout_copy", ConversionEvent: "order.completed", Variants: []ExperimentVariantRequest{{ID: "control", Weight: 40}, {ID: "variant", Weight: 40}}})
+	if err == nil {
+		t.Fatal("ValidateExperimentRequest() error = nil, want weight validation error")
 	}
 }

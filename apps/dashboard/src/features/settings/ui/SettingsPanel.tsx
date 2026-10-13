@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { IconCheck, IconCloud, IconKey, IconRefresh, IconServer, IconX } from '@tabler/icons-react';
-import { fetchHealth, hasConfiguredKeys, loginAdmin, type AdminPrincipal } from '../../../shared/api/client';
+import { fetchHealth, hasConfiguredIntegrationKey, loginAdmin, type AdminPrincipal } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { AdminManagementPanel } from '../../admin-management/ui/AdminManagementPanel';
 
 type SettingsPanelProps = { open: boolean; onClose: () => void; principal: AdminPrincipal | null; onAuthenticated: (principal: AdminPrincipal) => void };
 type ServiceState = 'checking' | 'ready' | 'degraded';
@@ -86,8 +87,8 @@ export function SettingsPanel({ open, onClose, principal, onAuthenticated }: Set
 
         <section className="settings-section" aria-labelledby="settings-access-title">
           <div className="settings-section-heading"><IconKey size={16} /><strong id="settings-access-title">Console access</strong></div>
-          <div className="settings-access-row"><span>Admin and integration keys</span><strong className={hasConfiguredKeys() ? 'ready' : 'degraded'}>{hasConfiguredKeys() ? <IconCheck size={14} /> : null}{hasConfiguredKeys() ? 'configured' : 'development defaults'}</strong></div>
-          <small className="settings-note">Keys stay in the local runtime configuration and are never shown in the dashboard. Set the Vite key variables before deploying.</small>
+          <div className="settings-access-row"><span>Integration key for test events</span><strong className={hasConfiguredIntegrationKey() ? 'ready' : 'degraded'}>{hasConfiguredIntegrationKey() ? <IconCheck size={14} /> : null}{hasConfiguredIntegrationKey() ? 'configured' : 'development default'}</strong></div>
+          <small className="settings-note">Admin access uses this session. The optional integration key stays in local runtime configuration and is never shown in the dashboard.</small>
           <form className="settings-login" onSubmit={(event) => void signIn(event)}>
             <span className="settings-login-label">Sign in with an admin session</span>
             <input aria-label="Admin email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@example.com" autoComplete="username" />
@@ -96,6 +97,8 @@ export function SettingsPanel({ open, onClose, principal, onAuthenticated }: Set
             <button className="primary-button" type="submit" disabled={loggingIn || !email || !password}>{loggingIn ? 'Signing in…' : principal?.id === 'bootstrap-key' ? 'Switch to session' : 'Sign in'}</button>
           </form>
         </section>
+
+        <AdminManagementPanel principal={principal} scope={scope} />
 
         <div className="settings-actions"><button className="text-button" type="button" onClick={onClose}>Close</button><button className="primary-button" type="button" onClick={() => void refresh()} disabled={refreshing}><IconRefresh size={15} className={refreshing ? 'spin' : ''} />{refreshing ? 'Refreshing…' : 'Refresh connections'}</button></div>
       </aside>

@@ -23,6 +23,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/motifengine/motifengine/internal/admin"
 	"github.com/motifengine/motifengine/internal/auth"
 	"github.com/motifengine/motifengine/internal/events"
 	"github.com/motifengine/motifengine/internal/points"
@@ -116,7 +117,7 @@ func runMigration(t *testing.T, databaseURL, direction string) {
 
 func TestMigrationsRoundTrip(t *testing.T) {
 	db := disposableDatabase(t)
-	for version := 23; version > 0; version-- {
+	for version := 25; version > 0; version-- {
 		var current int
 		if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 			t.Fatalf("migration version before down: %v", err)
@@ -138,8 +139,117 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
-	if current != 23 {
-		t.Fatalf("migration version after reapply = %d; want 23", current)
+	if current != 25 {
+		t.Fatalf("migration version after reapply = %d; want 25", current)
+	}
+}
+
+func TestMeasurementReports(t *testing.T) {
+	db := disposableDatabase(t)
+	ctx := context.Background()
+	for _, query := range []string{
+		`INSERT INTO tenants (id, name) VALUES ('measurement-tenant', 'Measurement tenant')`,
+		`INSERT INTO environments (tenant_id, id, name) VALUES ('measurement-tenant', 'sandbox', 'Sandbox')`,
+	} {
+		if _, err := db.pool.Exec(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seedEvent := func(externalID, eventType, userID string, occurredAt time.Time) {
+		t.Helper()
+		_, err := db.pool.Exec(ctx, `INSERT INTO events (tenant_id, environment_id, external_event_id, event_type, occurred_at, external_user_id, payload, payload_hash, status, received_at, processed_at) VALUES ('measurement-tenant', 'sandbox', $1, $2, $3, $4, '{}'::jsonb, ''::bytea, 'processed', $3, $3)`, externalID, eventType, occurredAt, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := time.Date(2026, time.January, 1, 10, 0, 0, 0, time.UTC)
+	seedEvent("view-a", "product.viewed", "user-a", base)
+	seedEvent("purchase-a", "order.completed", "user-a", base.Add(24*time.Hour))
+	seedEvent("view-b", "product.viewed", "user-b", base)
+	seedEvent("signup-a", "signup.completed", "user-a", base)
+	seedEvent("signup-b", "signup.completed", "user-b", base)
+	seedEvent("return-a-1", "session.started", "user-a", base.Add(24*time.Hour))
+	seedEvent("return-a-7", "session.started", "user-a", base.Add(7*24*time.Hour))
+	seedEvent("return-b-7", "session.started", "user-b", base.Add(7*24*time.Hour))
+
+	server := httptest.NewServer(admin.NewHandler(db.pool, "measurement-admin-key"))
+	t.Cleanup(server.Close)
+	requestJSON := func(method, path string, body string) (int, []byte) {
+		t.Helper()
+		request, err := http.NewRequest(method, server.URL+path, bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Motif-Admin-Key", "measurement-admin-key")
+		response, err := server.Client().Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		payload, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode, payload
+	}
+	status, body := requestJSON(http.MethodPost, "/v1/admin/metrics", `{"tenant_id":"measurement-tenant","environment_id":"sandbox","id":"repeat_buyers","name":"Repeat buyers","event_type":"order.completed","aggregation":"unique_users"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("metric creation returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodGet, "/v1/admin/metrics?tenant_id=measurement-tenant&environment_id=sandbox", "")
+	if status != http.StatusOK || !bytes.Contains(body, []byte(`"repeat_buyers"`)) {
+		t.Fatalf("metric listing returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodPost, "/v1/admin/metrics/repeat_buyers/archive?tenant_id=measurement-tenant&environment_id=sandbox", "{}")
+	if status != http.StatusOK || !bytes.Contains(body, []byte(`"active":false`)) {
+		t.Fatalf("metric archive returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodPost, "/v1/admin/analytics/funnel", `{"tenant_id":"measurement-tenant","environment_id":"sandbox","steps":[{"name":"Viewed","event_type":"product.viewed"},{"name":"Purchased","event_type":"order.completed"}]}`)
+	var funnel struct {
+		Steps []struct {
+			Users int64 `json:"users"`
+		} `json:"steps"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &funnel) != nil || len(funnel.Steps) != 2 || funnel.Steps[0].Users != 2 || funnel.Steps[1].Users != 1 {
+		t.Fatalf("funnel report returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodPost, "/v1/admin/analytics/retention", `{"tenant_id":"measurement-tenant","environment_id":"sandbox","cohort_event_type":"signup.completed","return_event_type":"session.started","intervals":[1,7]}`)
+	var retention struct {
+		CohortUsers int64 `json:"cohort_users"`
+		Intervals   []struct {
+			Days           int   `json:"days"`
+			ReturningUsers int64 `json:"returning_users"`
+		} `json:"intervals"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &retention) != nil || retention.CohortUsers != 2 || len(retention.Intervals) != 2 || retention.Intervals[0].ReturningUsers != 1 || retention.Intervals[1].ReturningUsers != 2 {
+		t.Fatalf("retention report returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodPost, "/v1/admin/analytics/segment", `{"tenant_id":"measurement-tenant","environment_id":"sandbox","event_type":"order.completed","min_events":1}`)
+	var segment struct {
+		Users  int64 `json:"users"`
+		Events int64 `json:"events"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &segment) != nil || segment.Users != 1 || segment.Events != 1 {
+		t.Fatalf("segment report returned %d: %s", status, body)
+	}
+	status, body = requestJSON(http.MethodPost, "/v1/admin/analytics/experiment", `{"tenant_id":"measurement-tenant","environment_id":"sandbox","id":"checkout_copy","conversion_event_type":"order.completed","variants":[{"id":"control","weight":50},{"id":"variant","weight":50}]}`)
+	var experiment struct {
+		Variants []struct {
+			AssignedUsers  int64 `json:"assigned_users"`
+			ConvertedUsers int64 `json:"converted_users"`
+		} `json:"variants"`
+	}
+	if status != http.StatusOK || json.Unmarshal(body, &experiment) != nil || len(experiment.Variants) != 2 {
+		t.Fatalf("experiment report returned %d: %s", status, body)
+	}
+	var assignedUsers, convertedUsers int64
+	for _, variant := range experiment.Variants {
+		assignedUsers += variant.AssignedUsers
+		convertedUsers += variant.ConvertedUsers
+	}
+	if assignedUsers != 2 || convertedUsers != 1 {
+		t.Fatalf("experiment totals = %d assigned, %d converted; want 2 and 1", assignedUsers, convertedUsers)
 	}
 }
 
@@ -389,7 +499,12 @@ func TestConversionLotBackfill(t *testing.T) {
 	if _, err := db.pool.Exec(ctx, `DELETE FROM point_lots WHERE award_entry_id IN (SELECT id FROM point_ledger_entries WHERE provenance->>'conversion_id' = $1)`, conversion.ID); err != nil {
 		t.Fatal(err)
 	}
+	// Roll back the measurement extension, engagement extension, and backfill so
+	// migration 23 runs again before both newer migrations are reapplied.
 	runMigration(t, db.url, "down")
+	runMigration(t, db.url, "down")
+	runMigration(t, db.url, "down")
+	runMigration(t, db.url, "up")
 	runMigration(t, db.url, "up")
 	runMigration(t, db.url, "up")
 	if _, err := ledger.Spend(ctx, scope, "user-1", "bonus", 20, "spend-restored", nil); err != nil {

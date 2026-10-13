@@ -5,6 +5,7 @@ import { createRule, type Rule, type Tenant } from '../../../shared/api/client';
 type RuleCreateDialogProps = {
   open: boolean;
   tenants: Tenant[];
+  activeScope?: Tenant;
   onClose: () => void;
   onCreated: (rule: Rule) => void;
 };
@@ -21,7 +22,7 @@ const initialForm = {
   ends_at: '',
 };
 
-export function RuleCreateDialog({ open, tenants, onClose, onCreated }: RuleCreateDialogProps) {
+export function RuleCreateDialog({ open, tenants, activeScope, onClose, onCreated }: RuleCreateDialogProps) {
   const [form, setForm] = useState(initialForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -29,12 +30,12 @@ export function RuleCreateDialog({ open, tenants, onClose, onCreated }: RuleCrea
 
   useEffect(() => {
     if (open) {
-      const firstTenant = tenants[0];
-      setForm({ ...initialForm, tenant_id: firstTenant?.tenant_id ?? '', environment_id: firstTenant?.environment_id ?? '' });
+      const selectedTenant = tenants.find((tenant) => tenant.tenant_id === activeScope?.tenant_id && tenant.environment_id === activeScope?.environment_id) ?? tenants[0];
+      setForm({ ...initialForm, tenant_id: selectedTenant?.tenant_id ?? '', environment_id: selectedTenant?.environment_id ?? '' });
       setError(null);
       setCreated(false);
     }
-  }, [open, tenants]);
+  }, [open, tenants, activeScope]);
 
   if (!open) return null;
   const selectedTenant = tenants.find((tenant) => tenant.tenant_id === form.tenant_id && tenant.environment_id === form.environment_id);

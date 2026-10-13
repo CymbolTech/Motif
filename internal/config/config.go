@@ -8,6 +8,7 @@ import (
 )
 
 type Config struct {
+	RuntimeEnvironment           string
 	DatabaseURL                  string
 	NATSURL                      string
 	APIAddr                      string
@@ -32,17 +33,18 @@ type Config struct {
 
 func Load() (Config, error) {
 	c := Config{
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		NATSURL:          valueOr("NATS_URL", "nats://localhost:4222"),
-		APIAddr:          valueOr("API_ADDR", "127.0.0.1:8080"),
-		WorkerHealthAddr: valueOr("WORKER_HEALTH_ADDR", "127.0.0.1:8081"),
-		BootstrapAPIKey:  valueOr("MOTIF_BOOTSTRAP_API_KEY", "dev_only_change_me"),
-		BootstrapTenant:  valueOr("MOTIF_BOOTSTRAP_TENANT", "demo-tenant"),
-		BootstrapEnv:     valueOr("MOTIF_BOOTSTRAP_ENVIRONMENT", "sandbox"),
-		AdminAPIKey:      valueOr("MOTIF_ADMIN_API_KEY", "admin_dev_only_change_me"),
-		AdminEmail:       valueOr("MOTIF_ADMIN_EMAIL", "admin@motif.local"),
-		AdminPassword:    valueOr("MOTIF_ADMIN_PASSWORD", "admin_dev_only_change_me"),
-		CORSOrigins:      splitCSV(os.Getenv("MOTIF_CORS_ORIGINS")),
+		RuntimeEnvironment: valueOr("MOTIF_RUNTIME_ENV", "development"),
+		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		NATSURL:            valueOr("NATS_URL", "nats://localhost:4222"),
+		APIAddr:            valueOr("API_ADDR", "127.0.0.1:8080"),
+		WorkerHealthAddr:   valueOr("WORKER_HEALTH_ADDR", "127.0.0.1:8081"),
+		BootstrapAPIKey:    valueOr("MOTIF_BOOTSTRAP_API_KEY", "dev_only_change_me"),
+		BootstrapTenant:    valueOr("MOTIF_BOOTSTRAP_TENANT", "demo-tenant"),
+		BootstrapEnv:       valueOr("MOTIF_BOOTSTRAP_ENVIRONMENT", "sandbox"),
+		AdminAPIKey:        valueOr("MOTIF_ADMIN_API_KEY", "admin_dev_only_change_me"),
+		AdminEmail:         valueOr("MOTIF_ADMIN_EMAIL", "admin@motif.local"),
+		AdminPassword:      valueOr("MOTIF_ADMIN_PASSWORD", "admin_dev_only_change_me"),
+		CORSOrigins:        splitCSV(os.Getenv("MOTIF_CORS_ORIGINS")),
 	}
 	var parseErr error
 	if c.RateLimitRPS, parseErr = strconv.ParseFloat(valueOr("MOTIF_RATE_LIMIT_RPS", "30"), 64); parseErr != nil || c.RateLimitRPS <= 0 {
@@ -68,6 +70,17 @@ func Load() (Config, error) {
 	}
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	if strings.EqualFold(c.RuntimeEnvironment, "production") {
+		if c.BootstrapAPIKey == "dev_only_change_me" || c.AdminAPIKey == "admin_dev_only_change_me" || c.AdminPassword == "admin_dev_only_change_me" {
+			return Config{}, fmt.Errorf("production requires non-default bootstrap and admin credentials")
+		}
+		if len(c.CORSOrigins) == 0 {
+			return Config{}, fmt.Errorf("production requires MOTIF_CORS_ORIGINS")
+		}
+		if c.RewardProviderEncryptionKey == "" {
+			return Config{}, fmt.Errorf("production requires MOTIF_REWARD_PROVIDER_ENCRYPTION_KEY")
+		}
 	}
 	return c, nil
 }

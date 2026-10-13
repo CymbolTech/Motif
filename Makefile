@@ -90,3 +90,13 @@ clean: ## Stop services and preserve persistent data
 
 db-reset: ## Destructively remove local database data
 	docker compose down -v
+
+backup: ## Create an encrypted-at-rest-ready PostgreSQL custom-format backup file
+	./scripts/db-backup.sh
+
+restore: ## Restore a backup after explicitly setting MOTIF_CONFIRM_RESTORE=yes
+	@test -n "$(BACKUP_FILE)" || (echo "BACKUP_FILE is required"; exit 1)
+	./scripts/db-restore.sh "$(BACKUP_FILE)"
+
+production-check: ## Check production health endpoints and metrics
+	./scripts/production-check.sh

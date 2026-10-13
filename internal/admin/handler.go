@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,7 @@ import (
 	"github.com/motifengine/motifengine/internal/audit"
 	"github.com/motifengine/motifengine/internal/auth"
 	"github.com/motifengine/motifengine/internal/entitlements"
+	eventdomain "github.com/motifengine/motifengine/internal/events"
 	"github.com/motifengine/motifengine/internal/points"
 	"github.com/motifengine/motifengine/internal/progression"
 	"github.com/motifengine/motifengine/internal/rewards"
@@ -33,6 +36,7 @@ type Handler struct {
 	limits          *entitlements.Store
 	authStore       *adminauth.Store
 	providerConfigs *rewards.ConfigStore
+	rewardOps       *rewards.Handler
 }
 
 func NewHandler(db *pgxpool.Pool, apiKey string, stores ...*adminauth.Store) http.Handler {
@@ -53,7 +57,8 @@ func NewHandlerWithProviderConfig(db *pgxpool.Pool, apiKey string, authStore *ad
 	if providerConfigs == nil {
 		providerConfigs = rewards.NewConfigStore(db, "")
 	}
-	return &Handler{db: db, apiKey: apiKey, limits: entitlements.NewStore(db), authStore: authStore, providerConfigs: providerConfigs}
+	rewardOps, _ := rewards.NewHandlerWithResolver(db, rewards.ScopeProviderResolver{Store: providerConfigs, Fallback: rewards.NewProvider(rewards.ProviderConfig{Kind: "mock"})}).(*rewards.Handler)
+	return &Handler{db: db, apiKey: apiKey, limits: entitlements.NewStore(db), authStore: authStore, providerConfigs: providerConfigs, rewardOps: rewardOps}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +102,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/tenants" {
 		h.createTenant(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/environments" {
+		h.listEnvironments(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/environments" {
+		h.createEnvironment(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/credentials" {
@@ -159,6 +172,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listEvents(w, r)
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/events/test" {
+		h.testEvent(w, r)
+		return
+	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/diagnostics" {
 		h.diagnostics(w, r)
 		return
@@ -211,6 +228,54 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listMissions(w, r)
 		return
 	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/goals" {
+		h.createGoal(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/goals" {
+		h.listGoals(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/campaigns" {
+		h.createCampaign(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/campaigns" {
+		h.listCampaigns(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/metrics" {
+		h.createMetric(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/metrics" {
+		h.listMetrics(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/admin/metrics/") && strings.HasSuffix(r.URL.Path, "/archive") {
+		h.archiveMetric(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/analytics" {
+		h.analytics(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/analytics/funnel" {
+		h.funnelAnalytics(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/analytics/retention" {
+		h.retentionAnalytics(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/analytics/segment" {
+		h.segmentAnalytics(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/analytics/experiment" {
+		h.experimentAnalytics(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/rewards" {
 		h.createReward(w, r)
 		return
@@ -239,8 +304,32 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listRedemptions(w, r)
 		return
 	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/user-profile" {
+		h.userProfile(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/user-transactions" {
+		h.userTransactions(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/points/transactions" {
+		h.createPointTransaction(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/points/conversions" {
+		h.createPointConversion(w, r)
+		return
+	}
 	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/admin/redemptions/") && strings.HasSuffix(r.URL.Path, "/attempts") {
 		h.listRedemptionAttempts(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/redemptions/test" {
+		h.testRedemption(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/redemptions/retry" {
+		h.retryAdminRedemption(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/reward-providers" {
@@ -249,6 +338,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/reward-providers" {
 		h.upsertRewardProvider(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/catalog-status" {
+		h.updateCatalogStatus(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/action-executions" {
@@ -381,16 +474,33 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 	if path == "/v1/admin/auth/me" && r.Method == http.MethodGet {
 		return true
 	}
+	if strings.HasPrefix(path, "/v1/admin/metrics/") {
+		return r.Method == http.MethodPost && principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
+	}
 	if r.Method != http.MethodGet {
 		allowedCreate := map[string]bool{
-			"/v1/admin/event-types":      true,
-			"/v1/admin/rules":            true,
-			"/v1/admin/currencies":       true,
-			"/v1/admin/missions":         true,
-			"/v1/admin/rewards":          true,
-			"/v1/admin/reward-providers": true,
-			"/v1/admin/achievements":     true,
-			"/v1/admin/levels":           true,
+			"/v1/admin/event-types":          true,
+			"/v1/admin/environments":         true,
+			"/v1/admin/events/test":          true,
+			"/v1/admin/redemptions/test":     true,
+			"/v1/admin/redemptions/retry":    true,
+			"/v1/admin/rules":                true,
+			"/v1/admin/currencies":           true,
+			"/v1/admin/missions":             true,
+			"/v1/admin/goals":                true,
+			"/v1/admin/campaigns":            true,
+			"/v1/admin/metrics":              true,
+			"/v1/admin/analytics/funnel":     true,
+			"/v1/admin/analytics/retention":  true,
+			"/v1/admin/analytics/segment":    true,
+			"/v1/admin/analytics/experiment": true,
+			"/v1/admin/rewards":              true,
+			"/v1/admin/reward-providers":     true,
+			"/v1/admin/achievements":         true,
+			"/v1/admin/levels":               true,
+			"/v1/admin/catalog-status":       true,
+			"/v1/admin/points/transactions":  true,
+			"/v1/admin/points/conversions":   true,
 		}
 		if !allowedCreate[path] {
 			return false
@@ -465,6 +575,14 @@ type tenantResponse struct {
 	EnvironmentName string `json:"environment_name"`
 	Status          string `json:"status"`
 	IntegrationKey  string `json:"integration_api_key,omitempty"`
+}
+
+type environmentResponse struct {
+	TenantID       string    `json:"tenant_id"`
+	ID             string    `json:"environment_id"`
+	Name           string    `json:"name"`
+	CreatedAt      time.Time `json:"created_at"`
+	IntegrationKey string    `json:"integration_api_key,omitempty"`
 }
 
 type credentialResponse struct {
@@ -567,6 +685,110 @@ type missionResponse struct {
 	TargetCount   int       `json:"target_count"`
 	Active        bool      `json:"active"`
 	CreatedAt     time.Time `json:"created_at"`
+}
+
+type goalResponse struct {
+	ID            string    `json:"id"`
+	TenantID      string    `json:"tenant_id"`
+	EnvironmentID string    `json:"environment_id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	EventType     string    `json:"event_type"`
+	TargetCount   int64     `json:"target_count"`
+	Active        bool      `json:"active"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type campaignResponse struct {
+	ID            string     `json:"id"`
+	TenantID      string     `json:"tenant_id"`
+	EnvironmentID string     `json:"environment_id"`
+	GoalID        string     `json:"goal_id,omitempty"`
+	Name          string     `json:"name"`
+	Description   string     `json:"description"`
+	EventType     string     `json:"event_type"`
+	StartsAt      *time.Time `json:"starts_at,omitempty"`
+	EndsAt        *time.Time `json:"ends_at,omitempty"`
+	Active        bool       `json:"active"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+type metricResponse struct {
+	TenantID      string    `json:"tenant_id"`
+	EnvironmentID string    `json:"environment_id"`
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	EventType     string    `json:"event_type"`
+	Aggregation   string    `json:"aggregation"`
+	Active        bool      `json:"active"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type funnelStepResponse struct {
+	Name           string  `json:"name"`
+	EventType      string  `json:"event_type"`
+	Users          int64   `json:"users"`
+	ConversionRate float64 `json:"conversion_rate"`
+}
+
+type funnelResponse struct {
+	TenantID      string               `json:"tenant_id"`
+	EnvironmentID string               `json:"environment_id"`
+	From          *time.Time           `json:"from,omitempty"`
+	To            *time.Time           `json:"to,omitempty"`
+	Steps         []funnelStepResponse `json:"steps"`
+	GeneratedAt   time.Time            `json:"generated_at"`
+}
+
+type retentionIntervalResponse struct {
+	Days           int     `json:"days"`
+	ReturningUsers int64   `json:"returning_users"`
+	Rate           float64 `json:"rate"`
+}
+
+type retentionResponse struct {
+	TenantID        string                      `json:"tenant_id"`
+	EnvironmentID   string                      `json:"environment_id"`
+	CohortEventType string                      `json:"cohort_event_type"`
+	ReturnEventType string                      `json:"return_event_type"`
+	From            *time.Time                  `json:"from,omitempty"`
+	To              *time.Time                  `json:"to,omitempty"`
+	CohortUsers     int64                       `json:"cohort_users"`
+	Intervals       []retentionIntervalResponse `json:"intervals"`
+	GeneratedAt     time.Time                   `json:"generated_at"`
+}
+
+type segmentResponse struct {
+	TenantID      string     `json:"tenant_id"`
+	EnvironmentID string     `json:"environment_id"`
+	EventType     string     `json:"event_type"`
+	MinEvents     int        `json:"min_events"`
+	Users         int64      `json:"users"`
+	Events        int64      `json:"events"`
+	From          *time.Time `json:"from,omitempty"`
+	To            *time.Time `json:"to,omitempty"`
+	GeneratedAt   time.Time  `json:"generated_at"`
+}
+
+type experimentVariantResponse struct {
+	ID             string  `json:"id"`
+	Weight         int     `json:"weight"`
+	AssignedUsers  int64   `json:"assigned_users"`
+	ConvertedUsers int64   `json:"converted_users"`
+	ConversionRate float64 `json:"conversion_rate"`
+}
+
+type experimentResponse struct {
+	TenantID        string                      `json:"tenant_id"`
+	EnvironmentID   string                      `json:"environment_id"`
+	ID              string                      `json:"id"`
+	ConversionEvent string                      `json:"conversion_event_type"`
+	Variants        []experimentVariantResponse `json:"variants"`
+	From            *time.Time                  `json:"from,omitempty"`
+	To              *time.Time                  `json:"to,omitempty"`
+	GeneratedAt     time.Time                   `json:"generated_at"`
 }
 
 type redemptionAdminResponse struct {
@@ -732,6 +954,80 @@ func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) listEnvironments(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	if !identifierPattern.MatchString(tenantID) {
+		writeError(w, http.StatusBadRequest, "invalid_tenant", "tenant_id is required")
+		return
+	}
+	rows, err := h.db.Query(r.Context(), `SELECT tenant_id, id, name, created_at FROM environments WHERE tenant_id = $1 ORDER BY id`, tenantID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "environment_lookup_failed", "environments could not be read")
+		return
+	}
+	defer rows.Close()
+	result := make([]environmentResponse, 0)
+	for rows.Next() {
+		var environment environmentResponse
+		if err := rows.Scan(&environment.TenantID, &environment.ID, &environment.Name, &environment.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "environment_lookup_failed", "environments could not be read")
+			return
+		}
+		result = append(result, environment)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "environment_lookup_failed", "environments could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
+	var request EnvironmentRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 8*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateEnvironmentRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_environment", err.Error())
+		return
+	}
+	integrationKey, err := generateIntegrationKey()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
+		return
+	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
+		return
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err := tx.Exec(r.Context(), `INSERT INTO environments (tenant_id, id, name) VALUES ($1, $2, $3)`, request.TenantID, request.ID, request.Name); err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "environment_exists", "environment already exists")
+			return
+		}
+		if isForeignKeyViolation(err) {
+			writeError(w, http.StatusNotFound, "tenant_not_found", "tenant was not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by) VALUES ($1, $2, $3, 'default', 'platform_admin')`, request.TenantID, request.ID, auth.Digest(integrationKey)); err != nil {
+		writeError(w, http.StatusInternalServerError, "credential_creation_failed", "integration credential could not be created")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.ID, ActorType: "platform_admin", Action: "environment.created", ResourceType: "environment", ResourceID: request.ID})
+	writeJSON(w, http.StatusCreated, environmentResponse{TenantID: request.TenantID, ID: request.ID, Name: request.Name, CreatedAt: time.Now().UTC(), IntegrationKey: integrationKey})
 }
 
 func (h *Handler) updateTenantStatus(w http.ResponseWriter, r *http.Request) {
@@ -1405,6 +1701,140 @@ func (h *Handler) listEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// testEvent is the admin-console equivalent of the public integration event
+// route. It keeps the selected tenant/environment boundary server-authorized
+// while avoiding the need to expose or persist a raw integration credential in
+// the browser just to exercise the receipt path.
+func (h *Handler) testEvent(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		TenantID        string          `json:"tenant_id"`
+		EnvironmentID   string          `json:"environment_id"`
+		ExternalEventID string          `json:"event_id"`
+		EventType       string          `json:"event_type"`
+		UserID          string          `json:"user_id"`
+		Payload         json.RawMessage `json:"payload"`
+	}
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 80*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID = strings.TrimSpace(request.TenantID)
+	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) {
+		writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id are required")
+		return
+	}
+	validated, err := eventdomain.Validate(eventdomain.Request{
+		ExternalEventID: request.ExternalEventID,
+		EventType:       request.EventType,
+		UserID:          request.UserID,
+		Payload:         request.Payload,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_event", err.Error())
+		return
+	}
+
+	if status := h.activeTenantStatus(r.Context(), request.TenantID); status != "active" {
+		if status == "" {
+			writeError(w, http.StatusNotFound, "tenant_not_found", "tenant was not found")
+		} else {
+			writeError(w, http.StatusConflict, "tenant_suspended", "tenant is suspended")
+		}
+		return
+	}
+	if err := h.limits.Check(r.Context(), request.TenantID, "max_event_payload_bytes", int64(len(validated.CanonicalPayload)), 0); err != nil {
+		if errors.As(err, new(*entitlements.LimitError)) {
+			writeError(w, http.StatusRequestEntityTooLarge, "plan_limit_exceeded", err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "plan_lookup_failed", "tenant plan could not be evaluated")
+		return
+	}
+
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "event_not_accepted", "event could not be accepted")
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	var tenantStatus string
+	if err := tx.QueryRow(r.Context(), `SELECT status FROM tenants WHERE id = $1`, request.TenantID).Scan(&tenantStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "tenant_not_found", "tenant was not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, "event_not_accepted", "event could not be accepted")
+		}
+		return
+	}
+	if tenantStatus != "active" {
+		writeError(w, http.StatusConflict, "tenant_suspended", "tenant is suspended")
+		return
+	}
+	var schema json.RawMessage
+	schemaVersion := 1
+	schemaErr := tx.QueryRow(r.Context(), `
+		SELECT schema, current_version
+		FROM event_types
+		WHERE tenant_id = $1 AND environment_id = $2 AND name = $3 AND active = true`, request.TenantID, request.EnvironmentID, validated.EventType).Scan(&schema, &schemaVersion)
+	if schemaErr == nil {
+		if err := eventdomain.ValidateSchema(schema, validated.CanonicalPayload); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "event_schema_mismatch", err.Error())
+			return
+		}
+	} else if !errors.Is(schemaErr, pgx.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, "event_not_accepted", "event schema could not be read")
+		return
+	}
+
+	var eventID int64
+	var eventStatus string
+	var userID *string
+	if validated.UserID != "" {
+		value := validated.UserID
+		userID = &value
+	}
+	err = tx.QueryRow(r.Context(), `
+		INSERT INTO events (tenant_id, environment_id, external_event_id, event_type, occurred_at, external_user_id, payload, payload_hash, event_schema_version)
+		VALUES ($1, $2, $3, $4, NULL, $5, $6::jsonb, decode($7, 'hex'), $8)
+		ON CONFLICT (tenant_id, environment_id, external_event_id) DO NOTHING
+		RETURNING id, status`, request.TenantID, request.EnvironmentID, validated.ExternalEventID, validated.EventType, userID, validated.CanonicalPayload, validated.PayloadHash, schemaVersion).Scan(&eventID, &eventStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var existingHash []byte
+		var existingSchemaVersion int
+		if queryErr := tx.QueryRow(r.Context(), `SELECT id, status, payload_hash, event_schema_version FROM events WHERE tenant_id = $1 AND environment_id = $2 AND external_event_id = $3`, request.TenantID, request.EnvironmentID, validated.ExternalEventID).Scan(&eventID, &eventStatus, &existingHash, &existingSchemaVersion); queryErr != nil {
+			writeError(w, http.StatusInternalServerError, "event_lookup_failed", "event could not be read")
+			return
+		}
+		decodedHash, _ := hex.DecodeString(validated.PayloadHash)
+		if !bytes.Equal(existingHash, decodedHash) {
+			writeError(w, http.StatusConflict, "event_id_conflict", "event_id already exists with a different payload")
+			return
+		}
+		schemaVersion = existingSchemaVersion
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "event_not_accepted", "event could not be accepted")
+		return
+	} else if _, err := tx.Exec(r.Context(), `INSERT INTO event_outbox (event_id) VALUES ($1)`, eventID); err != nil {
+		writeError(w, http.StatusInternalServerError, "event_not_accepted", "event could not be queued")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "event_not_accepted", "event could not be accepted")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "event.test_accepted", ResourceType: "event", ResourceID: strconv.FormatInt(eventID, 10)})
+	writeJSON(w, http.StatusAccepted, map[string]any{"event_id": eventID, "external_event_id": validated.ExternalEventID, "status": eventStatus, "schema_version": schemaVersion})
+}
+
+func (h *Handler) activeTenantStatus(ctx context.Context, tenantID string) string {
+	var status string
+	if err := h.db.QueryRow(ctx, `SELECT status FROM tenants WHERE id = $1`, tenantID).Scan(&status); err != nil {
+		return ""
+	}
+	return status
+}
+
 func (h *Handler) listRuleVersions(w http.ResponseWriter, r *http.Request) {
 	ruleID, ok := parseRuleVersionCollectionPath(r.URL.Path)
 	if !ok {
@@ -1939,6 +2369,463 @@ func (h *Handler) listMissions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (h *Handler) createGoal(w http.ResponseWriter, r *http.Request) {
+	var request GoalRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateGoalRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_goal", err.Error())
+		return
+	}
+	var goal goalResponse
+	err = h.db.QueryRow(r.Context(), `INSERT INTO goals (id, tenant_id, environment_id, name, description, event_type, target_count) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, tenant_id, environment_id, name, description, event_type, target_count, active, created_at`, request.ID, request.TenantID, request.EnvironmentID, request.Name, request.Description, request.EventType, request.TargetCount).Scan(&goal.ID, &goal.TenantID, &goal.EnvironmentID, &goal.Name, &goal.Description, &goal.EventType, &goal.TargetCount, &goal.Active, &goal.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "goal_exists", "goal already exists")
+			return
+		}
+		if isForeignKeyViolation(err) {
+			writeError(w, http.StatusNotFound, "environment_not_found", "tenant environment was not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "goal_creation_failed", "goal could not be created")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: goal.TenantID, EnvironmentID: goal.EnvironmentID, ActorType: "platform_admin", Action: "goal.created", ResourceType: "goal", ResourceID: goal.ID})
+	writeJSON(w, http.StatusCreated, goal)
+}
+
+func (h *Handler) listGoals(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(), `SELECT id, tenant_id, environment_id, name, description, event_type, target_count, active, created_at FROM goals WHERE ($1 = '' OR tenant_id = $1) AND ($2 = '' OR environment_id = $2) ORDER BY created_at DESC, id`, r.URL.Query().Get("tenant_id"), r.URL.Query().Get("environment_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "goal_lookup_failed", "goals could not be read")
+		return
+	}
+	defer rows.Close()
+	result := make([]goalResponse, 0)
+	for rows.Next() {
+		var goal goalResponse
+		if err := rows.Scan(&goal.ID, &goal.TenantID, &goal.EnvironmentID, &goal.Name, &goal.Description, &goal.EventType, &goal.TargetCount, &goal.Active, &goal.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "goal_lookup_failed", "goals could not be read")
+			return
+		}
+		result = append(result, goal)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "goal_lookup_failed", "goals could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) createCampaign(w http.ResponseWriter, r *http.Request) {
+	var request CampaignRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateCampaignRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_campaign", err.Error())
+		return
+	}
+	if request.GoalID != "" {
+		var goalScope string
+		if err := h.db.QueryRow(r.Context(), `SELECT tenant_id || ':' || environment_id FROM goals WHERE id = $1`, request.GoalID).Scan(&goalScope); errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "goal_not_found", "goal was not found")
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, "goal_lookup_failed", "goal could not be read")
+			return
+		} else if goalScope != request.TenantID+":"+request.EnvironmentID {
+			writeError(w, http.StatusBadRequest, "goal_scope_mismatch", "goal must belong to the campaign scope")
+			return
+		}
+	}
+	var campaign campaignResponse
+	err = h.db.QueryRow(r.Context(), `INSERT INTO campaigns (id, tenant_id, environment_id, goal_id, name, description, event_type, starts_at, ends_at) VALUES ($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8,$9) RETURNING id, tenant_id, environment_id, COALESCE(goal_id,''), name, description, event_type, starts_at, ends_at, active, created_at`, request.ID, request.TenantID, request.EnvironmentID, request.GoalID, request.Name, request.Description, request.EventType, request.StartsAt, request.EndsAt).Scan(&campaign.ID, &campaign.TenantID, &campaign.EnvironmentID, &campaign.GoalID, &campaign.Name, &campaign.Description, &campaign.EventType, &campaign.StartsAt, &campaign.EndsAt, &campaign.Active, &campaign.CreatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "campaign_exists", "campaign already exists")
+			return
+		}
+		if isForeignKeyViolation(err) {
+			writeError(w, http.StatusNotFound, "goal_or_environment_not_found", "goal or tenant environment was not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "campaign_creation_failed", "campaign could not be created")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: campaign.TenantID, EnvironmentID: campaign.EnvironmentID, ActorType: "platform_admin", Action: "campaign.created", ResourceType: "campaign", ResourceID: campaign.ID})
+	writeJSON(w, http.StatusCreated, campaign)
+}
+
+func (h *Handler) listCampaigns(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.Query(r.Context(), `SELECT id, tenant_id, environment_id, COALESCE(goal_id,''), name, description, event_type, starts_at, ends_at, active, created_at FROM campaigns WHERE ($1 = '' OR tenant_id = $1) AND ($2 = '' OR environment_id = $2) ORDER BY created_at DESC, id`, r.URL.Query().Get("tenant_id"), r.URL.Query().Get("environment_id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "campaign_lookup_failed", "campaigns could not be read")
+		return
+	}
+	defer rows.Close()
+	result := make([]campaignResponse, 0)
+	for rows.Next() {
+		var campaign campaignResponse
+		if err := rows.Scan(&campaign.ID, &campaign.TenantID, &campaign.EnvironmentID, &campaign.GoalID, &campaign.Name, &campaign.Description, &campaign.EventType, &campaign.StartsAt, &campaign.EndsAt, &campaign.Active, &campaign.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "campaign_lookup_failed", "campaigns could not be read")
+			return
+		}
+		result = append(result, campaign)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "campaign_lookup_failed", "campaigns could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) analytics(w http.ResponseWriter, r *http.Request) {
+	tenantID, environmentID := strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	if !identifierPattern.MatchString(tenantID) || !identifierPattern.MatchString(environmentID) {
+		writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id are required")
+		return
+	}
+	rows, err := h.db.Query(r.Context(), `SELECT c.id, c.name, c.event_type, c.starts_at, c.ends_at, COALESCE(g.target_count, 0), COUNT(e.id), COUNT(DISTINCT e.external_user_id) FROM campaigns c LEFT JOIN goals g ON g.id = c.goal_id LEFT JOIN events e ON e.tenant_id = c.tenant_id AND e.environment_id = c.environment_id AND e.event_type = c.event_type AND (c.starts_at IS NULL OR COALESCE(e.occurred_at, e.received_at) >= c.starts_at) AND (c.ends_at IS NULL OR COALESCE(e.occurred_at, e.received_at) < c.ends_at) WHERE c.tenant_id = $1 AND c.environment_id = $2 GROUP BY c.id, c.name, c.event_type, c.starts_at, c.ends_at, g.target_count ORDER BY c.created_at DESC`, tenantID, environmentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "analytics_lookup_failed", "campaign analytics could not be read")
+		return
+	}
+	defer rows.Close()
+	result := make([]map[string]any, 0)
+	for rows.Next() {
+		var id, name, eventType string
+		var startsAt, endsAt *time.Time
+		var target, eventCount, userCount int64
+		if err := rows.Scan(&id, &name, &eventType, &startsAt, &endsAt, &target, &eventCount, &userCount); err != nil {
+			writeError(w, http.StatusInternalServerError, "analytics_lookup_failed", "campaign analytics could not be read")
+			return
+		}
+		result = append(result, map[string]any{"campaign_id": id, "name": name, "event_type": eventType, "starts_at": startsAt, "ends_at": endsAt, "target_count": target, "event_count": eventCount, "unique_users": userCount})
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "analytics_lookup_failed", "campaign analytics could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "environment_id": environmentID, "campaigns": result, "generated_at": time.Now().UTC()})
+}
+
+func (h *Handler) createMetric(w http.ResponseWriter, r *http.Request) {
+	var request MetricRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateMetricRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_metric", err.Error())
+		return
+	}
+	var metric metricResponse
+	err = h.db.QueryRow(r.Context(), `INSERT INTO metric_definitions (tenant_id, environment_id, id, name, description, event_type, aggregation) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING tenant_id, environment_id, id, name, description, event_type, aggregation, active, created_at, updated_at`, request.TenantID, request.EnvironmentID, request.ID, request.Name, request.Description, request.EventType, request.Aggregation).Scan(&metric.TenantID, &metric.EnvironmentID, &metric.ID, &metric.Name, &metric.Description, &metric.EventType, &metric.Aggregation, &metric.Active, &metric.CreatedAt, &metric.UpdatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "metric_exists", "a metric with this id already exists in the environment")
+			return
+		}
+		if isForeignKeyViolation(err) {
+			writeError(w, http.StatusNotFound, "environment_not_found", "tenant environment was not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "metric_creation_failed", "metric could not be created")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: metric.TenantID, EnvironmentID: metric.EnvironmentID, ActorType: "platform_admin", Action: "metric.created", ResourceType: "metric", ResourceID: metric.ID})
+	writeJSON(w, http.StatusCreated, metric)
+}
+
+func (h *Handler) listMetrics(w http.ResponseWriter, r *http.Request) {
+	tenantID, environmentID := strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	if err := validateAnalyticsScope(tenantID, environmentID, nil, nil); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_scope", err.Error())
+		return
+	}
+	rows, err := h.db.Query(r.Context(), `SELECT tenant_id, environment_id, id, name, description, event_type, aggregation, active, created_at, updated_at FROM metric_definitions WHERE tenant_id = $1 AND environment_id = $2 ORDER BY created_at DESC, id`, tenantID, environmentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "metric_lookup_failed", "metrics could not be read")
+		return
+	}
+	defer rows.Close()
+	result := make([]metricResponse, 0)
+	for rows.Next() {
+		var metric metricResponse
+		if err := rows.Scan(&metric.TenantID, &metric.EnvironmentID, &metric.ID, &metric.Name, &metric.Description, &metric.EventType, &metric.Aggregation, &metric.Active, &metric.CreatedAt, &metric.UpdatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "metric_lookup_failed", "metrics could not be read")
+			return
+		}
+		result = append(result, metric)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "metric_lookup_failed", "metrics could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) archiveMetric(w http.ResponseWriter, r *http.Request) {
+	metricID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/admin/metrics/"), "/archive")
+	tenantID, environmentID := strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	if !identifierPattern.MatchString(metricID) {
+		writeError(w, http.StatusNotFound, "metric_not_found", "metric was not found")
+		return
+	}
+	if err := validateAnalyticsScope(tenantID, environmentID, nil, nil); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_scope", err.Error())
+		return
+	}
+	var active bool
+	err := h.db.QueryRow(r.Context(), `UPDATE metric_definitions SET active = false, updated_at = now() WHERE tenant_id = $1 AND environment_id = $2 AND id = $3 RETURNING active`, tenantID, environmentID, metricID).Scan(&active)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "metric_not_found", "metric was not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "metric_update_failed", "metric could not be archived")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: tenantID, EnvironmentID: environmentID, ActorType: "platform_admin", Action: "metric.archived", ResourceType: "metric", ResourceID: metricID})
+	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": tenantID, "environment_id": environmentID, "id": metricID, "active": active})
+}
+
+type measurementEvent struct {
+	UserID    string
+	EventType string
+	At        time.Time
+}
+
+func (h *Handler) queryMeasurementEvents(ctx context.Context, tenantID, environmentID string, from, to *time.Time) ([]measurementEvent, error) {
+	query := `SELECT external_user_id, event_type, COALESCE(occurred_at, received_at) FROM events WHERE tenant_id = $1 AND environment_id = $2 AND external_user_id IS NOT NULL AND external_user_id <> ''`
+	args := []any{tenantID, environmentID}
+	if from != nil {
+		query += fmt.Sprintf(" AND COALESCE(occurred_at, received_at) >= $%d", len(args)+1)
+		args = append(args, *from)
+	}
+	if to != nil {
+		query += fmt.Sprintf(" AND COALESCE(occurred_at, received_at) < $%d", len(args)+1)
+		args = append(args, *to)
+	}
+	query += ` ORDER BY external_user_id, COALESCE(occurred_at, received_at), id`
+	rows, err := h.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := make([]measurementEvent, 0)
+	for rows.Next() {
+		var event measurementEvent
+		if err := rows.Scan(&event.UserID, &event.EventType, &event.At); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (h *Handler) funnelAnalytics(w http.ResponseWriter, r *http.Request) {
+	var request FunnelRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateFunnelRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_funnel", err.Error())
+		return
+	}
+	events, err := h.queryMeasurementEvents(r.Context(), request.TenantID, request.EnvironmentID, request.From, request.To)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "funnel_lookup_failed", "funnel events could not be read")
+		return
+	}
+	progress := make(map[string]int)
+	counts := make([]int64, len(request.Steps))
+	for _, event := range events {
+		step := progress[event.UserID]
+		if step >= len(request.Steps) || event.EventType != request.Steps[step].EventType {
+			continue
+		}
+		counts[step]++
+		progress[event.UserID] = step + 1
+	}
+	steps := make([]funnelStepResponse, len(request.Steps))
+	base := float64(counts[0])
+	for index, step := range request.Steps {
+		rate := 0.0
+		if base > 0 {
+			rate = float64(counts[index]) / base
+		}
+		steps[index] = funnelStepResponse{Name: step.Name, EventType: step.EventType, Users: counts[index], ConversionRate: rate}
+	}
+	writeJSON(w, http.StatusOK, funnelResponse{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, From: request.From, To: request.To, Steps: steps, GeneratedAt: time.Now().UTC()})
+}
+
+func (h *Handler) retentionAnalytics(w http.ResponseWriter, r *http.Request) {
+	var request RetentionRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateRetentionRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_retention", err.Error())
+		return
+	}
+	events, err := h.queryMeasurementEvents(r.Context(), request.TenantID, request.EnvironmentID, request.From, request.To)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "retention_lookup_failed", "retention events could not be read")
+		return
+	}
+	cohorts := make(map[string]time.Time)
+	returned := make(map[string]map[int]bool)
+	for _, event := range events {
+		if event.EventType == request.CohortEventType {
+			if _, exists := cohorts[event.UserID]; !exists {
+				cohorts[event.UserID] = event.At.UTC()
+				returned[event.UserID] = make(map[int]bool)
+			}
+		}
+		cohortAt, exists := cohorts[event.UserID]
+		if !exists || event.EventType != request.ReturnEventType || !event.At.After(cohortAt) {
+			continue
+		}
+		for _, interval := range request.Intervals {
+			if utcDayDifference(cohortAt, event.At) == interval {
+				returned[event.UserID][interval] = true
+			}
+		}
+	}
+	cohortUsers := int64(len(cohorts))
+	intervals := make([]retentionIntervalResponse, len(request.Intervals))
+	for index, days := range request.Intervals {
+		var returning int64
+		for userID := range cohorts {
+			if returned[userID][days] {
+				returning++
+			}
+		}
+		rate := 0.0
+		if cohortUsers > 0 {
+			rate = float64(returning) / float64(cohortUsers)
+		}
+		intervals[index] = retentionIntervalResponse{Days: days, ReturningUsers: returning, Rate: rate}
+	}
+	writeJSON(w, http.StatusOK, retentionResponse{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, CohortEventType: request.CohortEventType, ReturnEventType: request.ReturnEventType, From: request.From, To: request.To, CohortUsers: cohortUsers, Intervals: intervals, GeneratedAt: time.Now().UTC()})
+}
+
+func utcDayDifference(from, to time.Time) int {
+	start := time.Date(from.UTC().Year(), from.UTC().Month(), from.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	end := time.Date(to.UTC().Year(), to.UTC().Month(), to.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	return int(end.Sub(start) / (24 * time.Hour))
+}
+
+func (h *Handler) segmentAnalytics(w http.ResponseWriter, r *http.Request) {
+	var request SegmentRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateSegmentRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_segment", err.Error())
+		return
+	}
+	events, err := h.queryMeasurementEvents(r.Context(), request.TenantID, request.EnvironmentID, request.From, request.To)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "segment_lookup_failed", "segment events could not be read")
+		return
+	}
+	counts := make(map[string]int)
+	var matchingEvents int64
+	for _, event := range events {
+		if event.EventType != request.EventType {
+			continue
+		}
+		counts[event.UserID]++
+		matchingEvents++
+	}
+	var users int64
+	for _, count := range counts {
+		if count >= request.MinEvents {
+			users++
+		}
+	}
+	writeJSON(w, http.StatusOK, segmentResponse{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, EventType: request.EventType, MinEvents: request.MinEvents, Users: users, Events: matchingEvents, From: request.From, To: request.To, GeneratedAt: time.Now().UTC()})
+}
+
+func (h *Handler) experimentAnalytics(w http.ResponseWriter, r *http.Request) {
+	var request ExperimentRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request, err := ValidateExperimentRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_experiment", err.Error())
+		return
+	}
+	events, err := h.queryMeasurementEvents(r.Context(), request.TenantID, request.EnvironmentID, request.From, request.To)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "experiment_lookup_failed", "experiment events could not be read")
+		return
+	}
+	assigned := make(map[string]int)
+	converted := make(map[string]bool)
+	for _, event := range events {
+		if _, exists := assigned[event.UserID]; !exists {
+			assigned[event.UserID] = chooseExperimentVariant(request.TenantID, request.ID, event.UserID, request.Variants)
+		}
+		if event.EventType == request.ConversionEvent {
+			converted[event.UserID] = true
+		}
+	}
+	variants := make([]experimentVariantResponse, len(request.Variants))
+	for index, variant := range request.Variants {
+		var assignedUsers, convertedUsers int64
+		for userID, variantIndex := range assigned {
+			if variantIndex != index {
+				continue
+			}
+			assignedUsers++
+			if converted[userID] {
+				convertedUsers++
+			}
+		}
+		rate := 0.0
+		if assignedUsers > 0 {
+			rate = float64(convertedUsers) / float64(assignedUsers)
+		}
+		variants[index] = experimentVariantResponse{ID: variant.ID, Weight: variant.Weight, AssignedUsers: assignedUsers, ConvertedUsers: convertedUsers, ConversionRate: rate}
+	}
+	writeJSON(w, http.StatusOK, experimentResponse{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ID: request.ID, ConversionEvent: request.ConversionEvent, Variants: variants, From: request.From, To: request.To, GeneratedAt: time.Now().UTC()})
+}
+
+func chooseExperimentVariant(tenantID, experimentID, userID string, variants []ExperimentVariantRequest) int {
+	digest := sha256.Sum256([]byte(tenantID + ":" + experimentID + ":" + userID))
+	point := int((uint16(digest[0])<<8 | uint16(digest[1])) % 100)
+	cumulative := 0
+	for index, variant := range variants {
+		cumulative += variant.Weight
+		if point < cumulative {
+			return index
+		}
+	}
+	return len(variants) - 1
+}
+
 func (h *Handler) createReward(w http.ResponseWriter, r *http.Request) {
 	var request rewards.RewardRequest
 	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 64*1024), &request); err != nil {
@@ -2227,6 +3114,133 @@ func (h *Handler) listRedemptions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (h *Handler) userProfile(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	environmentID := strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	userID := strings.TrimSpace(r.URL.Query().Get("user_id"))
+	if !identifierPattern.MatchString(tenantID) || !identifierPattern.MatchString(environmentID) || userID == "" || len(userID) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_user_scope", "tenant_id, environment_id, and user_id are required")
+		return
+	}
+	snapshot, err := points.LoadUserSnapshot(r.Context(), h.db, points.Scope{TenantID: tenantID, EnvironmentID: environmentID}, userID, 12)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "user_profile_lookup_failed", "user profile could not be read")
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *Handler) userTransactions(w http.ResponseWriter, r *http.Request) {
+	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
+	environmentID := strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	userID := strings.TrimSpace(r.URL.Query().Get("user_id"))
+	if !identifierPattern.MatchString(tenantID) || !identifierPattern.MatchString(environmentID) || userID == "" || len(userID) > 200 {
+		writeError(w, http.StatusBadRequest, "invalid_user_scope", "tenant_id, environment_id, and user_id are required")
+		return
+	}
+	limit := 12
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			writeError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	entries, nextCursor, err := points.LoadUserTransactions(r.Context(), h.db, points.Scope{TenantID: tenantID, EnvironmentID: environmentID}, userID, limit, strings.TrimSpace(r.URL.Query().Get("cursor")))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_cursor", "cursor is invalid")
+		return
+	}
+	response := map[string]any{"user_id": userID, "transactions": entries}
+	if nextCursor != "" {
+		response["next_cursor"] = nextCursor
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) createPointTransaction(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		TenantID       string          `json:"tenant_id"`
+		EnvironmentID  string          `json:"environment_id"`
+		ExternalUserID string          `json:"external_user_id"`
+		Currency       string          `json:"currency"`
+		Amount         int64           `json:"amount"`
+		Type           string          `json:"type"`
+		IdempotencyKey string          `json:"idempotency_key"`
+		Provenance     json.RawMessage `json:"provenance"`
+	}
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 32*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID, request.EnvironmentID, request.ExternalUserID = strings.TrimSpace(request.TenantID), strings.TrimSpace(request.EnvironmentID), strings.TrimSpace(request.ExternalUserID)
+	request.Currency, request.Type, request.IdempotencyKey = strings.TrimSpace(request.Currency), strings.TrimSpace(request.Type), strings.TrimSpace(request.IdempotencyKey)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.ExternalUserID == "" || request.Currency == "" || request.Amount <= 0 || request.IdempotencyKey == "" || (request.Type != "award" && request.Type != "spend") {
+		writeError(w, http.StatusBadRequest, "invalid_transaction", "tenant, environment, user, currency, positive amount, type, and idempotency_key are required")
+		return
+	}
+	ledger := points.NewLedger(h.db)
+	var entry points.LedgerEntry
+	var err error
+	if request.Type == "award" {
+		entry, err = ledger.Award(r.Context(), points.Scope{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID}, request.ExternalUserID, request.Currency, request.Amount, request.IdempotencyKey, request.Provenance)
+	} else {
+		entry, err = ledger.Spend(r.Context(), points.Scope{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID}, request.ExternalUserID, request.Currency, request.Amount, request.IdempotencyKey, request.Provenance)
+	}
+	switch {
+	case errors.Is(err, points.ErrCurrencyNotFound):
+		writeError(w, http.StatusNotFound, "currency_not_found", "currency was not found")
+	case errors.Is(err, points.ErrInsufficientBalance):
+		writeError(w, http.StatusConflict, "insufficient_balance", "point balance is insufficient")
+	case errors.Is(err, points.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with a different request")
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "transaction_failed", "point transaction could not be recorded")
+	default:
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "points." + request.Type, ResourceType: "point_ledger_entry", ResourceID: strconv.FormatInt(entry.ID, 10), Metadata: auditMetadata(map[string]any{"user_id": request.ExternalUserID, "currency": request.Currency, "amount": request.Amount})})
+		writeJSON(w, http.StatusCreated, entry)
+	}
+}
+
+func (h *Handler) createPointConversion(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		TenantID        string `json:"tenant_id"`
+		EnvironmentID   string `json:"environment_id"`
+		ExternalUserID  string `json:"external_user_id"`
+		SourceCurrency  string `json:"source_currency"`
+		TargetCurrency  string `json:"target_currency"`
+		Amount          int64  `json:"amount"`
+		RateNumerator   int64  `json:"rate_numerator"`
+		RateDenominator int64  `json:"rate_denominator"`
+		IdempotencyKey  string `json:"idempotency_key"`
+	}
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID, request.EnvironmentID, request.ExternalUserID = strings.TrimSpace(request.TenantID), strings.TrimSpace(request.EnvironmentID), strings.TrimSpace(request.ExternalUserID)
+	request.SourceCurrency, request.TargetCurrency, request.IdempotencyKey = strings.TrimSpace(request.SourceCurrency), strings.TrimSpace(request.TargetCurrency), strings.TrimSpace(request.IdempotencyKey)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.ExternalUserID == "" || request.SourceCurrency == "" || request.TargetCurrency == "" || request.Amount <= 0 || request.RateNumerator <= 0 || request.RateDenominator <= 0 || request.IdempotencyKey == "" {
+		writeError(w, http.StatusBadRequest, "invalid_conversion", "tenant, environment, user, currencies, positive amount, positive rate, and idempotency_key are required")
+		return
+	}
+	conversion, err := points.Convert(r.Context(), h.db, points.ConversionRequest{Scope: points.Scope{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID}, ExternalUserID: request.ExternalUserID, SourceCurrency: request.SourceCurrency, TargetCurrency: request.TargetCurrency, Amount: request.Amount, RateNumerator: request.RateNumerator, RateDenominator: request.RateDenominator, IdempotencyKey: request.IdempotencyKey})
+	switch {
+	case errors.Is(err, points.ErrCurrencyNotFound):
+		writeError(w, http.StatusNotFound, "currency_not_found", "currency was not found")
+	case errors.Is(err, points.ErrInsufficientBalance):
+		writeError(w, http.StatusConflict, "insufficient_balance", "point balance is insufficient")
+	case errors.Is(err, points.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with a different request")
+	case err != nil:
+		writeError(w, http.StatusBadRequest, "conversion_failed", err.Error())
+	default:
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "points.converted", ResourceType: "point_conversion", ResourceID: conversion.ID})
+		writeJSON(w, http.StatusCreated, conversion)
+	}
+}
+
 func (h *Handler) listRedemptionAttempts(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/admin/redemptions/"), "/attempts")
 	id = strings.TrimSuffix(id, "/")
@@ -2262,6 +3276,73 @@ func (h *Handler) listRedemptionAttempts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+type adminRedemptionRequest struct {
+	TenantID       string `json:"tenant_id"`
+	EnvironmentID  string `json:"environment_id"`
+	RewardID       string `json:"reward_id"`
+	RedemptionID   string `json:"redemption_id"`
+	ExternalUserID string `json:"external_user_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+func (h *Handler) testRedemption(w http.ResponseWriter, r *http.Request) {
+	var request adminRedemptionRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID = strings.TrimSpace(request.TenantID)
+	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
+	request.RewardID = strings.TrimSpace(request.RewardID)
+	request.ExternalUserID = strings.TrimSpace(request.ExternalUserID)
+	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.RewardID == "" || request.ExternalUserID == "" || request.IdempotencyKey == "" {
+		writeError(w, http.StatusBadRequest, "invalid_redemption", "tenant, environment, reward, external user, and idempotency key are required")
+		return
+	}
+	redemption, err := h.rewardOps.RedeemForAdmin(r.Context(), points.Scope{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID}, request.RewardID, request.ExternalUserID, request.IdempotencyKey)
+	h.writeAdminRedemptionResult(w, r, redemption, err, request.TenantID, request.EnvironmentID, "redemption.tested")
+}
+
+func (h *Handler) retryAdminRedemption(w http.ResponseWriter, r *http.Request) {
+	var request adminRedemptionRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID = strings.TrimSpace(request.TenantID)
+	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
+	request.RedemptionID = strings.TrimSpace(request.RedemptionID)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.RedemptionID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_redemption", "tenant, environment, and redemption_id are required")
+		return
+	}
+	redemption, err := h.rewardOps.RetryForAdmin(r.Context(), points.Scope{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID}, request.RedemptionID)
+	h.writeAdminRedemptionResult(w, r, redemption, err, request.TenantID, request.EnvironmentID, "redemption.retried")
+}
+
+func (h *Handler) writeAdminRedemptionResult(w http.ResponseWriter, r *http.Request, redemption rewards.Redemption, err error, tenantID, environmentID, action string) {
+	switch {
+	case errors.Is(err, points.ErrInsufficientBalance):
+		writeError(w, http.StatusConflict, "insufficient_balance", "point balance is insufficient")
+	case errors.Is(err, points.ErrIdempotencyConflict):
+		writeError(w, http.StatusConflict, "idempotency_conflict", "idempotency key was already used with a different request")
+	case errors.Is(err, points.ErrCurrencyNotFound):
+		writeError(w, http.StatusNotFound, "currency_not_found", "redemption currency was not found")
+	case errors.Is(err, rewards.ErrRedemptionNotRetryable):
+		writeError(w, http.StatusConflict, "redemption_not_retryable", "redemption cannot be retried in its current state")
+	case errors.Is(err, rewards.ErrDeliveryUnknown):
+		writeJSON(w, http.StatusAccepted, redemption)
+	case errors.Is(err, pgx.ErrNoRows):
+		writeError(w, http.StatusNotFound, "redemption_not_found", "redemption or reward was not found")
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, "redemption_failed", "redemption could not be completed")
+	default:
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: tenantID, EnvironmentID: environmentID, ActorType: "platform_admin", Action: action, ResourceType: "redemption", ResourceID: redemption.ID, Metadata: auditMetadata(map[string]any{"status": redemption.Status})})
+		writeJSON(w, http.StatusOK, redemption)
+	}
 }
 
 func (h *Handler) listRewardProviders(w http.ResponseWriter, r *http.Request) {
@@ -2319,6 +3400,51 @@ func (h *Handler) upsertRewardProvider(w http.ResponseWriter, r *http.Request) {
 		DeliveryURL: config.URL, StatusURL: config.StatusURL, TokenConfigured: config.TokenConfigured,
 		TimeoutSeconds: config.TimeoutSeconds, Active: config.Active,
 	})
+}
+
+func (h *Handler) updateCatalogStatus(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		TenantID      string `json:"tenant_id"`
+		EnvironmentID string `json:"environment_id"`
+		Resource      string `json:"resource"`
+		ID            string `json:"id"`
+		Active        bool   `json:"active"`
+	}
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 8*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.TenantID = strings.TrimSpace(request.TenantID)
+	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
+	request.Resource = strings.TrimSpace(request.Resource)
+	request.ID = strings.TrimSpace(request.ID)
+	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.ID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_catalog_resource", "tenant_id, environment_id, and id are required")
+		return
+	}
+	queries := map[string]string{
+		"currency":    `UPDATE currencies SET active = $4, updated_at = now() WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+		"reward":      `UPDATE rewards SET active = $4, updated_at = now() WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+		"mission":     `UPDATE missions SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+		"achievement": `UPDATE achievements SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+		"level":       `UPDATE level_definitions SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+	}
+	query, ok := queries[request.Resource]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "invalid_catalog_resource", "resource must be currency, reward, mission, achievement, or level")
+		return
+	}
+	command, err := h.db.Exec(r.Context(), query, request.ID, request.TenantID, request.EnvironmentID, request.Active)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "catalog_status_update_failed", "catalog status could not be updated")
+		return
+	}
+	if command.RowsAffected() == 0 {
+		writeError(w, http.StatusNotFound, "catalog_resource_not_found", "catalog resource was not found")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "catalog.status_changed", ResourceType: request.Resource, ResourceID: request.ID, Metadata: auditMetadata(map[string]any{"active": request.Active})})
+	writeJSON(w, http.StatusOK, map[string]any{"resource": request.Resource, "id": request.ID, "active": request.Active})
 }
 
 func generateIntegrationKey() (string, error) {

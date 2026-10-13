@@ -25,7 +25,7 @@ export function TenantList({ tenants, loading, error, onRefresh, onCreate, onOpe
       {error ? (
         <div className="inline-state error-state" role="alert">
           <strong>Tenant list unavailable</strong>
-          <span>{error}. Check the admin key and API readiness.</span>
+          <span>{error}. Check your admin session and API readiness.</span>
         </div>
       ) : loading ? (
         <div className="tenant-skeletons" aria-label="Loading tenants">

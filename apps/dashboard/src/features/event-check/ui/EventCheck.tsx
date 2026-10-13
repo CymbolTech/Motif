@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { IconBolt, IconCheck, IconCopy, IconSend, IconTerminal2 } from '@tabler/icons-react';
-import { fetchEventStatus, submitEvent, type EventReceipt } from '../../../shared/api/client';
+import { fetchScopedEventStatus, submitAdminTestEvent, type EventReceipt } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
 
 type EventFormState = {
@@ -30,21 +30,29 @@ export function EventCheck() {
     setSending(true);
     try {
       const payload = JSON.parse(form.payload) as Record<string, unknown>;
-      const nextReceipt = await submitEvent({
-        external_event_id: `console-${Date.now()}`,
+      if (!scope) throw new Error('Select a tenant environment before sending a test event.');
+      const externalEventID = `console-${Date.now()}`;
+      const nextReceipt = await submitAdminTestEvent({
+        tenant_id: scope.tenant_id,
+        environment_id: scope.environment_id,
+        external_event_id: externalEventID,
         event_type: form.event_type,
         user_id: form.user_id,
         payload,
       });
       setReceipt(nextReceipt);
-      window.setTimeout(async () => {
-        try {
-          const status = await fetchEventStatus(nextReceipt.external_event_id);
-          setReceipt(status);
-        } catch {
-          // The first receipt is still useful when the worker is catching up.
+      void (async () => {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 350));
+          try {
+            const status = await fetchScopedEventStatus(nextReceipt.external_event_id, { tenant_id: scope.tenant_id, environment_id: scope.environment_id });
+            setReceipt(status);
+            if (status.status === 'processed' || status.status === 'failed') break;
+          } catch {
+            // The accepted receipt remains visible while the worker catches up.
+          }
         }
-      }, 900);
+      })();
     } catch (submissionError) {
       setError(submissionError instanceof SyntaxError ? 'Payload must be valid JSON.' : (submissionError as Error).message);
     } finally {

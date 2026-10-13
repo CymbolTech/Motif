@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { IconAdjustmentsHorizontal, IconBook2, IconChevronDown, IconCode, IconCoin, IconCommand, IconLayoutDashboard, IconLogout, IconMenu2, IconSparkles, IconX } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconArrowRight, IconBook2, IconChevronDown, IconCode, IconCoin, IconCommand, IconLayoutDashboard, IconLock, IconLogout, IconMenu2, IconSparkles, IconX } from '@tabler/icons-react';
 import { EventTypesPage } from '../pages/event-types/ui/EventTypesPage';
 import { OverviewPage } from '../pages/overview/ui/OverviewPage';
 import { RulesPage } from '../pages/rules/ui/RulesPage';
 import { LoyaltyPage } from '../pages/loyalty/ui/LoyaltyPage';
 import { SettingsPanel } from '../features/settings/ui/SettingsPanel';
 import { ScopeProvider, useScope } from '../shared/scope/ScopeContext';
-import { fetchAdminPrincipal, logoutAdmin, type AdminPrincipal } from '../shared/api/client';
+import { clearAdminSession, fetchAdminPrincipal, loginAdmin, logoutAdmin, type AdminPrincipal } from '../shared/api/client';
 
 type View = 'overview' | 'event-types' | 'rules' | 'loyalty';
 
@@ -18,24 +18,74 @@ const navItems = [
 ];
 
 export function App() {
-  return <ScopeProvider><ConsoleShell /></ScopeProvider>;
+  const [principal, setPrincipal] = useState<AdminPrincipal | null>(null);
+  const [authState, setAuthState] = useState<'checking' | 'signed_out' | 'signed_in'>('checking');
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAdminPrincipal().then((nextPrincipal) => {
+      if (cancelled) return;
+      setPrincipal(nextPrincipal);
+      setAuthState('signed_in');
+    }).catch(() => {
+      if (cancelled) return;
+      clearAdminSession();
+      setPrincipal(null);
+      setAuthState('signed_out');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (authState === 'checking') return <AuthLoading />;
+  if (!principal) return <LoginScreen onAuthenticated={(nextPrincipal) => { setPrincipal(nextPrincipal); setAuthState('signed_in'); }} />;
+  return <ScopeProvider><ConsoleShell principal={principal} onAuthenticated={setPrincipal} onSignedOut={() => { setPrincipal(null); setAuthState('signed_out'); }} /></ScopeProvider>;
 }
 
-function ConsoleShell() {
+function AuthLoading() {
+  return <main className="auth-screen"><section className="auth-card auth-loading" aria-live="polite"><div className="auth-mark"><IconLock size={20} /></div><span>Checking console access…</span></section></main>;
+}
+
+function LoginScreen({ onAuthenticated }: { onAuthenticated: (principal: AdminPrincipal) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function signIn(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      onAuthenticated(await loginAdmin(email, password));
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'Unable to sign in');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <main className="auth-screen"><section className="auth-card" aria-labelledby="auth-title">
+    <div className="auth-brand"><div className="auth-mark"><IconLock size={20} /></div><span>motif / engine console</span></div>
+    <div className="auth-copy"><span className="section-label">Private workspace</span><h1 id="auth-title">Sign in to your console.</h1><p>Use an administrator account to access tenants, rules, events, and measurement.</p></div>
+    <form className="auth-form" onSubmit={(event) => void signIn(event)}>
+      <label><span>Email</span><input autoFocus required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" placeholder="admin@example.com" /></label>
+      <label><span>Password</span><input required type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Your password" /></label>
+      {error && <p className="auth-error" role="alert">{error}</p>}
+      <button className="auth-submit" type="submit" disabled={submitting}>{submitting ? 'Signing in…' : <>Continue <IconArrowRight size={16} /></>}</button>
+    </form>
+  </section></main>;
+}
+
+function ConsoleShell({ principal, onAuthenticated, onSignedOut }: { principal: AdminPrincipal; onAuthenticated: (principal: AdminPrincipal) => void; onSignedOut: () => void }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<View>('overview');
   const { tenants, scope, loading: scopeLoading, error: scopeError, selectScope } = useScope();
-  const [principal, setPrincipal] = useState<AdminPrincipal | null>(null);
-
-  useEffect(() => {
-    void fetchAdminPrincipal().then(setPrincipal).catch(() => setPrincipal(null));
-  }, []);
+  const docsURL = import.meta.env.VITE_DOCS_URL || `${window.location.protocol}//${window.location.hostname}:4174/docs`;
 
   const signOut = async () => {
     await logoutAdmin().catch(() => undefined);
-    setPrincipal(null);
-    window.location.reload();
+    onSignedOut();
   };
 
   return (
@@ -57,11 +107,11 @@ function ConsoleShell() {
           {navItems.map(({ label, icon: Icon, view: itemView }) => { const active = itemView === view; return <button className={`nav-item ${active ? 'active' : ''} ${itemView ? '' : 'disabled'}`} type="button" key={label} disabled={!itemView} onClick={() => { if (itemView) { setView(itemView); setMobileOpen(false); } }}><Icon size={17} stroke={active ? 2 : 1.6} /><span>{label}</span>{active && <span className="nav-pip" />}{!itemView && <span className="nav-soon">soon</span>}</button>; })}
           <span className="nav-label secondary">Manage</span>
           <button className={`nav-item ${settingsOpen ? 'active' : ''}`} type="button" onClick={() => setSettingsOpen(true)}><IconAdjustmentsHorizontal size={17} stroke={1.6} /><span>Settings</span>{settingsOpen && <span className="nav-pip" />}</button>
-          <button className="nav-item" type="button"><IconBook2 size={17} stroke={1.6} /><span>Docs</span><IconArrowExternal /></button>
+          <a className="nav-item" href={docsURL} target="_blank" rel="noopener noreferrer"><IconBook2 size={17} stroke={1.6} /><span>Docs</span><IconArrowExternal /></a>
         </nav>
         <div className="sidebar-footer">
           <div className="status-capsule"><span className="status-dot" />All systems normal</div>
-          <button className="profile-button" type="button"><span className="profile-avatar">{principal?.role === 'tenant_admin' ? 'TA' : 'SA'}</span><span><strong>{principal?.role === 'tenant_admin' ? 'Tenant Admin' : 'Super Admin'}</strong><small>{principal?.email ?? 'Checking access…'}</small></span><IconChevronDown size={15} /></button>
+          <div className="profile-button"><span className="profile-avatar">{principal?.role === 'tenant_admin' ? 'TA' : 'SA'}</span><span><strong>{principal?.role === 'tenant_admin' ? 'Tenant Admin' : 'Super Admin'}</strong><small>{principal?.email ?? 'Checking access…'}</small></span></div>
           <button className="logout-button" type="button" onClick={() => void signOut()}><IconLogout size={16} /><span>Sign out</span></button>
         </div>
       </aside>
@@ -70,7 +120,7 @@ function ConsoleShell() {
         <div className="mobile-topbar"><button className="icon-button" type="button" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><IconMenu2 size={20} /></button><span>{view === 'overview' ? 'Overview' : view === 'event-types' ? 'Event types' : view === 'rules' ? 'Rules' : 'Points & rewards'}</span><span className="mobile-topbar-mark"><IconCommand size={15} /></span></div>
         {view === 'overview' ? <OverviewPage principal={principal} /> : view === 'event-types' ? <EventTypesPage /> : view === 'rules' ? <RulesPage /> : <LoyaltyPage />}
       </div>
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} principal={principal} onAuthenticated={setPrincipal} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} principal={principal} onAuthenticated={onAuthenticated} />
     </div>
   );
 }

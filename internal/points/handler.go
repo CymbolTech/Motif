@@ -43,6 +43,106 @@ type balanceResponse struct {
 	AccountID  *int64 `json:"account_id,omitempty"`
 }
 
+// BalanceResponse is the tenant-scoped balance shape shared by integration and
+// admin read paths. Keep the JSON contract identical for both callers.
+type BalanceResponse = balanceResponse
+
+type UserSnapshot struct {
+	UserID       string                        `json:"user_id"`
+	Balances     []balanceResponse             `json:"balances"`
+	Transactions []LedgerEntry                 `json:"transactions"`
+	NextCursor   string                        `json:"next_cursor,omitempty"`
+	Missions     []map[string]any              `json:"missions"`
+	Achievements []progression.UserAchievement `json:"achievements"`
+	Progression  progression.UserProgression   `json:"progression"`
+}
+
+// LoadUserSnapshot reads all loyalty state for one user inside an explicit
+// tenant/environment scope. It is used by the authenticated admin console so
+// the browser never has to guess which integration credential belongs to the
+// selected workspace.
+func LoadUserSnapshot(ctx context.Context, db *pgxpool.Pool, scope Scope, userID string, limit int) (UserSnapshot, error) {
+	h := &Handler{db: db}
+	balances, err := h.loadBalances(ctx, scope, userID)
+	if err != nil {
+		return UserSnapshot{}, err
+	}
+	transactions, nextCursor, err := LoadUserTransactions(ctx, db, scope, userID, limit, "")
+	if err != nil {
+		return UserSnapshot{}, err
+	}
+	missions, err := h.loadMissions(ctx, scope, userID)
+	if err != nil {
+		return UserSnapshot{}, err
+	}
+	achievements, err := h.loadAchievements(ctx, scope, userID)
+	if err != nil {
+		return UserSnapshot{}, err
+	}
+	userProgression, err := progression.LoadUserProgression(ctx, db, progression.Scope{TenantID: scope.TenantID, EnvironmentID: scope.EnvironmentID}, userID)
+	if err != nil {
+		return UserSnapshot{}, err
+	}
+	return UserSnapshot{UserID: userID, Balances: balances, Transactions: transactions, NextCursor: nextCursor, Missions: missions, Achievements: achievements, Progression: userProgression}, nil
+}
+
+// LoadUserTransactions returns a cursor-paginated ledger for an explicit
+// tenant/environment scope. The cursor format is the same opaque value used
+// by the public points endpoint.
+func LoadUserTransactions(ctx context.Context, db *pgxpool.Pool, scope Scope, userID string, limit int, cursor string) ([]LedgerEntry, string, error) {
+	if limit < 1 || limit > 100 {
+		return nil, "", errors.New("limit must be between 1 and 100")
+	}
+	var cursorTime *time.Time
+	var cursorID int64
+	if strings.TrimSpace(cursor) != "" {
+		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+		if err != nil {
+			return nil, "", err
+		}
+		var parsed transactionCursor
+		if err := json.Unmarshal(decoded, &parsed); err != nil || parsed.ID < 1 {
+			return nil, "", errors.New("cursor is invalid")
+		}
+		parsedTime, err := time.Parse(time.RFC3339Nano, parsed.CreatedAt)
+		if err != nil {
+			return nil, "", errors.New("cursor is invalid")
+		}
+		cursorTime, cursorID = &parsedTime, parsed.ID
+	}
+	rows, err := db.Query(ctx, `
+		SELECT e.id, e.account_id, c.id, c.code, a.external_user_id, e.entry_type, e.amount, e.balance_after, e.idempotency_key, e.provenance, e.created_at
+		FROM point_ledger_entries e
+		JOIN point_accounts a ON a.id = e.account_id
+		JOIN currencies c ON c.id = a.currency_id
+		WHERE a.tenant_id = $1 AND a.environment_id = $2 AND a.external_user_id = $3
+		  AND ($4::timestamptz IS NULL OR e.created_at < $4 OR (e.created_at = $4 AND e.id < $5))
+		ORDER BY e.created_at DESC, e.id DESC LIMIT $6`, scope.TenantID, scope.EnvironmentID, userID, cursorTime, cursorID, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	entries := make([]LedgerEntry, 0, limit)
+	for rows.Next() {
+		var entry LedgerEntry
+		if err := rows.Scan(&entry.ID, &entry.AccountID, &entry.CurrencyID, &entry.CurrencyCode, &entry.ExternalUserID, &entry.EntryType, &entry.Amount, &entry.BalanceAfter, &entry.IdempotencyKey, &entry.Provenance, &entry.CreatedAt); err != nil {
+			return nil, "", err
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	var nextCursor string
+	if len(entries) > limit {
+		last := entries[limit-1]
+		entries = entries[:limit]
+		payload, _ := json.Marshal(transactionCursor{CreatedAt: last.CreatedAt.UTC().Format(time.RFC3339Nano), ID: last.ID})
+		nextCursor = base64.RawURLEncoding.EncodeToString(payload)
+	}
+	return entries, nextCursor, nil
+}
+
 type balancesResponse struct {
 	UserID   string            `json:"user_id"`
 	Balances []balanceResponse `json:"balances"`
@@ -82,6 +182,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listAchievements(w, r, scope, userID)
 	case r.Method == http.MethodGet && resource == "progression":
 		h.getProgression(w, r, scope, userID)
+	case r.Method == http.MethodGet && resource == "streaks":
+		h.getStreaks(w, r, scope, userID)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 	}
@@ -166,6 +268,49 @@ func (h *Handler) getProgression(w http.ResponseWriter, r *http.Request, scope S
 		return
 	}
 	writeJSON(w, http.StatusOK, userProgression)
+}
+
+func (h *Handler) getStreaks(w http.ResponseWriter, r *http.Request, scope Scope, userID string) {
+	eventType := strings.TrimSpace(r.URL.Query().Get("event_type"))
+	rows, err := h.db.Query(r.Context(), `SELECT DISTINCT (COALESCE(occurred_at, received_at) AT TIME ZONE 'UTC')::date FROM events WHERE tenant_id = $1 AND environment_id = $2 AND external_user_id = $3 AND ($4 = '' OR event_type = $4) ORDER BY 1 DESC`, scope.TenantID, scope.EnvironmentID, userID, eventType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "streak_lookup_failed", "streak could not be read")
+		return
+	}
+	defer rows.Close()
+	dates := make([]time.Time, 0)
+	for rows.Next() {
+		var date time.Time
+		if err := rows.Scan(&date); err != nil {
+			writeError(w, http.StatusInternalServerError, "streak_lookup_failed", "streak could not be read")
+			return
+		}
+		dates = append(dates, date)
+	}
+	if err := rows.Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "streak_lookup_failed", "streak could not be read")
+		return
+	}
+	current, longest := 0, 0
+	if len(dates) > 0 {
+		for index := 0; index < len(dates); index++ {
+			length := 1
+			for index+length < len(dates) && dates[index].Sub(dates[index+length]) == 24*time.Hour {
+				length++
+			}
+			if index == 0 && (dates[0].Equal(time.Now().UTC().Truncate(24*time.Hour)) || dates[0].Equal(time.Now().UTC().Add(-24*time.Hour).Truncate(24*time.Hour))) {
+				current = length
+			}
+			if length > longest {
+				longest = length
+			}
+		}
+	}
+	var lastActive any
+	if len(dates) > 0 {
+		lastActive = dates[0].Format("2006-01-02")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "event_type": eventType, "current_streak": current, "longest_streak": longest, "last_active_date": lastActive})
 }
 
 func (h *Handler) listMissions(w http.ResponseWriter, r *http.Request, scope Scope, userID string) {
@@ -346,7 +491,7 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request, scop
 func parseUserPath(path string) (string, string, bool) {
 	value := strings.TrimPrefix(path, "/v1/users/")
 	parts := strings.Split(strings.TrimSuffix(value, "/"), "/")
-	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || (parts[1] != "points" && parts[1] != "profile" && parts[1] != "missions" && parts[1] != "achievements" && parts[1] != "progression") {
+	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || (parts[1] != "points" && parts[1] != "profile" && parts[1] != "missions" && parts[1] != "achievements" && parts[1] != "progression" && parts[1] != "streaks") {
 		return "", "", false
 	}
 	userID, err := url.PathUnescape(parts[0])
@@ -364,6 +509,9 @@ func parseUserPath(path string) (string, string, bool) {
 	}
 	if len(parts) == 2 && parts[1] == "progression" {
 		return userID, "progression", true
+	}
+	if len(parts) == 2 && parts[1] == "streaks" {
+		return userID, "streaks", true
 	}
 	if len(parts) == 3 && parts[1] == "points" && parts[2] == "transactions" {
 		return userID, "transactions", true
