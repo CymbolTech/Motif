@@ -62,7 +62,7 @@ services:
       MOTIF_ADMIN_API_KEY: ${MOTIF_ADMIN_API_KEY:-admin_dev_only_change_me}
       MOTIF_ADMIN_EMAIL: ${MOTIF_ADMIN_EMAIL:-admin@motif.local}
       MOTIF_ADMIN_PASSWORD: ${MOTIF_ADMIN_PASSWORD:-admin_dev_only_change_me}
-      MOTIF_CORS_ORIGINS: ${MOTIF_CORS_ORIGINS:-http://127.0.0.1:4173}
+      MOTIF_CORS_ORIGINS: ${MOTIF_CORS_ORIGINS:-http://127.0.0.1:4173,http://127.0.0.1:4174}
       MOTIF_RATE_LIMIT_RPS: ${MOTIF_RATE_LIMIT_RPS:-30}
       MOTIF_RATE_LIMIT_BURST: ${MOTIF_RATE_LIMIT_BURST:-60}
       MOTIF_METRICS_ENABLED: ${MOTIF_METRICS_ENABLED:-true}
@@ -98,7 +98,7 @@ services:
       MOTIF_BOOTSTRAP_API_KEY: ${MOTIF_BOOTSTRAP_API_KEY:-dev_only_change_me}
       MOTIF_ADMIN_API_KEY: ${MOTIF_ADMIN_API_KEY:-admin_dev_only_change_me}
       MOTIF_ADMIN_PASSWORD: ${MOTIF_ADMIN_PASSWORD:-admin_dev_only_change_me}
-      MOTIF_CORS_ORIGINS: ${MOTIF_CORS_ORIGINS:-http://127.0.0.1:4173}
+      MOTIF_CORS_ORIGINS: ${MOTIF_CORS_ORIGINS:-http://127.0.0.1:4173,http://127.0.0.1:4174}
       NATS_URL: nats://nats:4222
       WORKER_HEALTH_ADDR: 0.0.0.0:8081
       MOTIF_REWARD_PROVIDER: ${MOTIF_REWARD_PROVIDER:-mock}
@@ -118,6 +118,41 @@ services:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8081/health/ready >/dev/null"]
       interval: 10s
       timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dashboard.Dockerfile
+      args:
+        VITE_DOCS_URL: ${MOTIF_MARKETING_URL:-http://127.0.0.1:4174}/docs
+    ports:
+      - "${PUBLIC_BIND:-127.0.0.1}:${DASHBOARD_PORT:-4173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  marketing:
+    build:
+      context: .
+      dockerfile: deploy/docker/Marketing.Dockerfile
+      args:
+        NEXT_PUBLIC_DASHBOARD_URL: ${MOTIF_CONSOLE_URL:-http://127.0.0.1:4173}
+    ports:
+      - "${PUBLIC_BIND:-127.0.0.1}:${MARKETING_PORT:-4174}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
       retries: 6
     restart: unless-stopped
 

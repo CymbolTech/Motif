@@ -21,6 +21,23 @@ func TestValidateTenantRequest(t *testing.T) {
 	}
 }
 
+func TestValidateTenantSignupRequestNormalizesDefaults(t *testing.T) {
+	request, err := ValidateTenantSignupRequest(TenantSignupRequest{Email: " Owner@Acme.Example ", Password: "a-long-password", TenantID: " acme ", Name: " Acme Rewards "})
+	if err != nil {
+		t.Fatalf("ValidateTenantSignupRequest() error = %v", err)
+	}
+	if request.Email != "owner@acme.example" || request.EnvironmentID != "production" || request.EnvironmentName != "Production" {
+		t.Fatalf("unexpected normalized signup request: %+v", request)
+	}
+}
+
+func TestValidateTenantSignupRequestRejectsShortPassword(t *testing.T) {
+	_, err := ValidateTenantSignupRequest(TenantSignupRequest{Email: "owner@acme.example", Password: "short", TenantID: "acme", Name: "Acme"})
+	if err == nil {
+		t.Fatal("ValidateTenantSignupRequest() error = nil, want password validation error")
+	}
+}
+
 func TestValidateEventTypeRequest(t *testing.T) {
 	request, err := ValidateEventTypeRequest(EventTypeRequest{
 		TenantID:      "acme",
@@ -77,6 +94,26 @@ func TestValidateRuleRequestAcceptsScheduleWindow(t *testing.T) {
 	}
 	if request.StartsAt == nil || request.EndsAt == nil || !request.EndsAt.Equal(ends) {
 		t.Fatalf("schedule window was not preserved: %+v", request)
+	}
+}
+
+func TestValidateRuleRequestAcceptsMultipleActions(t *testing.T) {
+	request, err := ValidateRuleRequest(RuleRequest{
+		TenantID: "acme", EnvironmentID: "sandbox", Name: "purchase reward", EventType: "order.completed",
+		Conditions: json.RawMessage(`{}`), Actions: json.RawMessage(`[
+            {"type":"award_xp","amount":10},
+            {"type":"award_points","currency":"coins","amount":5}
+        ]`),
+	})
+	if err != nil {
+		t.Fatalf("ValidateRuleRequest() error = %v", err)
+	}
+	var actions []map[string]any
+	if err := json.Unmarshal(request.Action, &actions); err != nil {
+		t.Fatalf("normalized action is not an array: %v", err)
+	}
+	if len(actions) != 2 || actions[0]["type"] != "award_xp" || actions[1]["type"] != "award_points" {
+		t.Fatalf("normalized actions = %s", request.Action)
 	}
 }
 

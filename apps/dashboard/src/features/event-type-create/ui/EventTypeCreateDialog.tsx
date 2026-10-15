@@ -1,74 +1,73 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { IconBraces, IconCheck, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCircleCheck } from '@tabler/icons-react';
 import { createEventType, type EventType, type Tenant } from '../../../shared/api/client';
+import { Sheet } from '../../../shared/ui/Sheet';
+import { PayloadShapeBuilder, createPayloadField, payloadFieldNamePattern, schemaFromPayloadFields, type PayloadField } from '../../../shared/ui/PayloadShapeBuilder';
 
 type EventTypeCreateDialogProps = {
   open: boolean;
-  tenants: Tenant[];
   activeScope?: Tenant;
+  initialName?: string;
+  closeOnCreated?: boolean;
   onClose: () => void;
   onCreated: (eventType: EventType) => void;
 };
 
-const initialForm = {
-  tenant_id: '',
-  environment_id: '',
-  name: '',
-  schema: '{\n  "required": []\n}',
-};
+const initialForm = { name: '' };
 
-export function EventTypeCreateDialog({ open, tenants, activeScope, onClose, onCreated }: EventTypeCreateDialogProps) {
+export function EventTypeCreateDialog({ open, activeScope, initialName = '', closeOnCreated = false, onClose, onCreated }: EventTypeCreateDialogProps) {
   const [form, setForm] = useState(initialForm);
+  const [fields, setFields] = useState<PayloadField[]>([createPayloadField(true)]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(false);
 
   useEffect(() => {
     if (open) {
-      const selectedTenant = tenants.find((tenant) => tenant.tenant_id === activeScope?.tenant_id && tenant.environment_id === activeScope?.environment_id) ?? tenants[0];
-      setForm({ ...initialForm, tenant_id: selectedTenant?.tenant_id ?? '', environment_id: selectedTenant?.environment_id ?? '' });
+      setForm({ ...initialForm, name: initialName });
+      setFields([createPayloadField(true)]);
       setError(null);
       setCreated(false);
     }
-  }, [open, tenants, activeScope]);
+  }, [open, activeScope, initialName]);
 
   if (!open) return null;
-
-  const selectedTenant = tenants.find((tenant) => tenant.tenant_id === form.tenant_id && tenant.environment_id === form.environment_id);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setSaving(true);
     try {
-      const schema = JSON.parse(form.schema) as Record<string, unknown>;
-      const eventType = await createEventType({ tenant_id: form.tenant_id, environment_id: form.environment_id, name: form.name, schema });
-      setCreated(true);
+      if (!activeScope) throw new Error('Your workspace membership is not ready yet.');
+      const names = fields.filter((field) => field.name.trim()).map((field) => field.name.trim());
+      if (names.length === 0) throw new Error('Add at least one field so Motif knows what to expect.');
+      if (names.some((fieldName) => !payloadFieldNamePattern.test(fieldName))) throw new Error('Field names must start with a letter or underscore.');
+      if (new Set(names).size !== names.length) throw new Error('Each field name must be unique.');
+      const schema = schemaFromPayloadFields(fields);
+      const eventType = await createEventType({ tenant_id: activeScope.tenant_id, environment_id: activeScope.environment_id, name: form.name, schema });
       onCreated(eventType);
+      if (closeOnCreated) onClose();
+      else setCreated(true);
     } catch (creationError) {
-      setError(creationError instanceof SyntaxError ? 'Schema must be valid JSON.' : creationError instanceof Error ? creationError.message : 'Event type could not be created.');
+      setError(creationError instanceof Error ? creationError.message : 'Event type could not be created.');
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="dialog-layer" role="presentation">
-      <button className="dialog-backdrop" type="button" onClick={onClose} aria-label="Close create event type dialog" />
-      <section className="side-dialog" role="dialog" aria-modal="true" aria-labelledby="create-event-type-title">
-        <div className="dialog-heading"><div><span className="section-label">Event contract</span><h2 id="create-event-type-title">Register an event type</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><IconX size={17} /></button></div>
-        {created ? <div className="key-success"><div className="key-success-icon"><IconCheck size={18} stroke={2} /></div><h3>Event type registered.</h3><p>The contract is active for the selected tenant environment and can now validate incoming events.</p><button className="primary-button dialog-done" type="button" onClick={onClose}>Done</button></div> : (
-          <form className="dialog-form" onSubmit={handleSubmit}>
-            <p className="dialog-intro">Keep the event name stable and describe the fields your payload must include. Schema validation currently supports the required-field list.</p>
-            <label><span>Tenant environment</span><select required value={`${form.tenant_id}::${form.environment_id}`} onChange={(event) => { const [tenantId, environmentId] = event.target.value.split('::'); setForm({ ...form, tenant_id: tenantId, environment_id: environmentId }); }}><option value="" disabled>Select an environment</option>{tenants.map((tenant) => <option key={`${tenant.tenant_id}-${tenant.environment_id}`} value={`${tenant.tenant_id}::${tenant.environment_id}`}>{tenant.name} · {tenant.environment_name}</option>)}</select></label>
-            <label><span>Event type name</span><input required pattern="[a-z0-9][a-z0-9._-]{0,127}" placeholder="order.completed" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /><small>Use lowercase namespaces such as <code>order.completed</code>.</small></label>
-            <label><span>Schema</span><div className="code-field"><IconBraces size={15} stroke={1.5} /><textarea required value={form.schema} onChange={(event) => setForm({ ...form, schema: event.target.value })} spellCheck={false} /></div></label>
-            {selectedTenant && <div className="dialog-context">Registering in <strong>{selectedTenant.name}</strong> / {selectedTenant.environment_name}</div>}
-            {error && <div className="dialog-error" role="alert">{error}</div>}
-            <button className="primary-button dialog-submit" type="submit" disabled={saving || tenants.length === 0}>{saving ? 'Registering…' : 'Register event type'}</button>
-          </form>
-        )}
-      </section>
-    </div>
+    <Sheet size="wide" labelledBy="create-event-type-title" title="Register an event type" description="Give the event a stable name, then choose the information your app sends with it. No JSON needed." onClose={onClose} footer={created ? undefined : <>
+      {activeScope && <span className="form-footer-note">Registering in <strong>{activeScope.name}</strong> · {activeScope.environment_name}</span>}
+      <button className="secondary-button" type="button" onClick={onClose}>Cancel</button>
+      <button className="primary-button" type="submit" form="create-event-type-form" disabled={saving || !activeScope}>{saving ? 'Registering…' : 'Register event type'}</button>
+    </>}>
+      {created ? <div className="empty-state"><IconCircleCheck size={24} stroke={1.5} className="tone-success" aria-hidden="true" /><strong>Event type registered</strong><span>The contract is active in your workspace and can now validate incoming events.</span><button className="primary-button" type="button" onClick={onClose}>Done</button></div> : (
+        <form id="create-event-type-form" className="form-stack" onSubmit={handleSubmit}>
+          <label className="field"><span className="field-label">Event type name</span><input className="mono" required pattern="[a-z0-9][a-z0-9._-]{0,127}" placeholder="order.completed" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} spellCheck={false} /><small className="field-help">Use lowercase namespaces such as <code>order.completed</code>.</small></label>
+          <div className="field"><span className="field-label">Event information</span><PayloadShapeBuilder fields={fields} onChange={setFields} /></div>
+          {error && <p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span></p>}
+        </form>
+      )}
+    </Sheet>
   );
 }

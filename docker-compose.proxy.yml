@@ -1,0 +1,17 @@
+# Optional overlay for an Nginx Proxy Manager container on the same Docker host.
+# Create the shared network once with: docker network create proxy
+services:
+  dashboard:
+    networks:
+      - default
+      - proxy
+
+  marketing:
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-proxy}

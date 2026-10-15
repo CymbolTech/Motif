@@ -1,0 +1,435 @@
+/* MotifEngine public site: technical telemetry on warm concrete, one signal
+   orange that takes whole regions at the turning points, charcoal for the
+   arcade. Anybody carries every word; Martian Mono only carries data. */
+
+:root {
+  --ground: #e3e2dc;
+  --ground-hi: #eeede8;
+  --ground-lo: #d6d5ce;
+  --ink: #1d1d1b;
+  --ink-2: #4a4a46;
+  --ink-3: #5f5f59;
+  --rule: #b5b4ad;
+  --rule-strong: #8f8e88;
+  --signal: #ff3d00;
+  --signal-deep: #c93000;
+  --on-signal: #1d1d1b;
+  --night: #1a1a19;
+  --night-hi: #242422;
+  --night-ink: #ebeae4;
+  --night-ink-2: #a9a8a1;
+  --night-rule: #3b3b38;
+
+  --font-display: 'Anybody Variable', 'Arial Narrow', sans-serif;
+  --font-text: 'Host Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Martian Mono Variable', ui-monospace, 'SFMono-Regular', monospace;
+
+  --gutter: clamp(16px, 2.4vw, 36px);
+  --max: 1680px;
+  --hud-h: 60px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  color-scheme: light;
+}
+
+:root[data-theme='night'] {
+  --ground: #161615;
+  --ground-hi: #20201e;
+  --ground-lo: #0f0f0e;
+  --ink: #ebeae4;
+  --ink-2: #b8b7b0;
+  --ink-3: #9a9992;
+  --rule: #34342f;
+  --rule-strong: #55554f;
+  --signal-deep: #ff5a26;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: calc(var(--hud-h) + 24px);
+  scrollbar-color: var(--ink) var(--ground-lo);
+  scrollbar-width: thin;
+}
+
+/* Lenis drives scrolling when it is running; CSS smoothing would fight it. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.lenis) {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-text);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  caret-color: var(--signal);
+  overflow-x: clip;
+  transition: background-color 600ms var(--ease-out), color 600ms var(--ease-out);
+}
+
+::selection {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--ground-lo);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink);
+  border: 3px solid var(--ground-lo);
+}
+
+a {
+  color: inherit;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.22em;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 3px;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+code,
+pre,
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+.mono {
+  font-size: 11px;
+  font-stretch: 87.5%;
+  font-weight: 450;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+  text-transform: uppercase;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-stretch: var(--stretch, 72%);
+  letter-spacing: -0.015em;
+  line-height: 0.86;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 10px 14px;
+  background: var(--signal);
+  color: var(--on-signal);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-160%);
+  transition: transform 200ms var(--ease-out);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.frame {
+  width: 100%;
+  max-width: var(--max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+}
+
+/* Column guides: the drawing grid every section sits on. */
+.guides {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.guides .frame {
+  height: 100%;
+}
+
+.guides .grid {
+  height: 100%;
+}
+
+.guides span {
+  border-left: 1px solid var(--rule);
+  opacity: 0.45;
+}
+
+.guides span:last-child {
+  border-right: 1px solid var(--rule);
+}
+
+main,
+footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Buttons: hard rectangles, wide Anybody labels, the signal is the primary. */
+.btn {
+  --btn-bg: transparent;
+  --btn-fg: var(--ink);
+  --btn-line: var(--ink);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 1px solid var(--btn-line);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-stretch: 125%;
+  font-weight: 720;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background-color 180ms var(--ease-out), color 180ms var(--ease-out), border-color 180ms var(--ease-out), transform 180ms var(--ease-out);
+}
+
+.btn:hover {
+  --btn-bg: var(--ink);
+  --btn-fg: var(--ground);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.btn[disabled]:hover {
+  --btn-bg: transparent;
+  --btn-fg: var(--ink);
+}
+
+.btn-signal {
+  --btn-bg: var(--signal);
+  --btn-fg: var(--on-signal);
+  --btn-line: var(--signal);
+}
+
+.btn-signal:hover {
+  --btn-bg: var(--ink);
+  --btn-fg: var(--signal);
+  --btn-line: var(--ink);
+}
+
+.btn-big {
+  min-height: 64px;
+  padding: 0 26px;
+  font-size: 13px;
+}
+
+.btn .key {
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-stretch: 87.5%;
+  opacity: 0.7;
+}
+
+/* Corner registration marks, used on every framed surface. */
+.ticks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ticks::before,
+.ticks::after,
+.ticks > i::before,
+.ticks > i::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--tick, var(--ink));
+  border-style: solid;
+  border-width: 0;
+}
+
+.ticks::before {
+  top: -1px;
+  left: -1px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.ticks::after {
+  top: -1px;
+  right: -1px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.ticks > i::before {
+  bottom: -1px;
+  left: -1px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.ticks > i::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+/* Section scaffolding */
+.section {
+  position: relative;
+  padding-block: clamp(96px, 14vw, 200px) clamp(72px, 10vw, 140px);
+}
+
+.section-head {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  row-gap: 28px;
+  align-items: end;
+  margin-bottom: clamp(48px, 7vw, 104px);
+}
+
+.section-title {
+  grid-column: 1 / span 9;
+  font-size: clamp(3rem, 8.4vw, 8.25rem);
+  letter-spacing: 0;
+}
+
+.section-lede {
+  grid-column: 10 / span 3;
+  max-width: 34ch;
+  color: var(--ink-2);
+  font-size: 17px;
+}
+
+.coord {
+  position: absolute;
+  top: 18px;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+
+.coord-left {
+  left: var(--gutter);
+}
+
+.coord-right {
+  right: var(--gutter);
+}
+
+@media (max-width: 960px) {
+  .section-title {
+    grid-column: 1 / -1;
+  }
+
+  .section-lede {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 16px;
+  }
+
+  .guides span:nth-child(n + 5) {
+    display: none;
+  }
+
+  .guides .grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .guides span:nth-child(4) {
+    border-right: 1px solid var(--rule);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

@@ -49,3 +49,48 @@ func TestValidateAction(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateActionsAcceptsMultipleTypedActions(t *testing.T) {
+	raw := json.RawMessage(`[
+        {"type":"award_xp","amount":10},
+        {"type":"award_points","currency":"coins","amount":5}
+    ]`)
+	canonical, err := ValidateActions(raw)
+	if err != nil {
+		t.Fatalf("ValidateActions() error = %v", err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(canonical, &got); err != nil {
+		t.Fatalf("canonical actions are not JSON: %v", err)
+	}
+	if len(got) != 2 || got[0]["type"] != "award_xp" || got[0]["amount"] != float64(10) || got[1]["type"] != "award_points" || got[1]["currency"] != "coins" || got[1]["amount"] != float64(5) {
+		t.Fatalf("canonical actions = %s", canonical)
+	}
+}
+
+func TestValidateActionsWrapsLegacySingleAction(t *testing.T) {
+	canonical, err := ValidateActions(json.RawMessage(`{"type":"award_xp","amount":10}`))
+	if err != nil {
+		t.Fatalf("ValidateActions() error = %v", err)
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(canonical, &got); err != nil {
+		t.Fatalf("canonical action is not JSON: %v", err)
+	}
+	if len(got) != 1 || got[0]["type"] != "award_xp" || got[0]["amount"] != float64(10) {
+		t.Fatalf("canonical legacy action = %s", canonical)
+	}
+}
+
+func TestValidateActionsRejectsEmptyOrInvalidLists(t *testing.T) {
+	for _, raw := range []string{
+		`[]`,
+		`[{"type":"award_xp","amount":0}]`,
+		`[{"type":"award_xp","amount":10}, {"type":"unknown"}]`,
+		`["award_xp"]`,
+	} {
+		if _, err := ValidateActions(json.RawMessage(raw)); err == nil {
+			t.Fatalf("ValidateActions(%s) returned nil error", raw)
+		}
+	}
+}

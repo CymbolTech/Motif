@@ -1,0 +1,247 @@
+/* The manual: Read mode inside the same world. Measure first, then type. */
+
+.docs-hero {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  row-gap: 20px;
+  padding-block: clamp(56px, 8vw, 120px) clamp(40px, 5vw, 72px);
+  border-bottom: 1px solid var(--ink);
+}
+
+.docs-title {
+  grid-column: 1 / -1;
+  font-size: clamp(3.4rem, 11vw, 11rem);
+  --stretch: 64%;
+}
+
+.docs-lede {
+  grid-column: 1 / span 6;
+  max-width: 54ch;
+  font-size: clamp(1.1rem, 1.5vw, 1.35rem);
+  line-height: 1.45;
+}
+
+.docs-meta {
+  grid-column: 8 / span 5;
+  align-self: end;
+  color: var(--ink-2);
+  text-transform: none;
+}
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  padding-block: 48px 120px;
+}
+
+.docs-index {
+  position: sticky;
+  top: calc(var(--hud-h) + 28px);
+  grid-column: 1 / span 3;
+  align-self: start;
+  display: grid;
+  border-top: 1px solid var(--ink);
+}
+
+.docs-index a {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-family: var(--font-text);
+  font-size: 15px;
+  font-weight: 560;
+  letter-spacing: 0;
+  text-decoration: none;
+  text-transform: none;
+}
+
+.docs-index a:hover {
+  color: var(--ink);
+}
+
+.docs-content {
+  grid-column: 4 / span 8;
+  display: grid;
+  gap: clamp(72px, 9vw, 128px);
+}
+
+.docs-section {
+  display: grid;
+  gap: 22px;
+}
+
+.docs-h2 {
+  font-size: clamp(2.4rem, 5vw, 4.8rem);
+  --stretch: 68%;
+}
+
+.docs-p {
+  max-width: 68ch;
+  color: var(--ink-2);
+  font-size: 18px;
+}
+
+.docs-p code,
+.docs-table code {
+  padding: 1px 5px;
+  border: 1px solid var(--rule);
+  background: var(--ground-hi);
+  font-size: 0.82em;
+}
+
+.steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--ink);
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  grid-template-columns: 4ch minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 14px 24px;
+  align-items: start;
+  padding: 26px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.step-number {
+  color: var(--signal-deep);
+  font-size: 40px;
+  --stretch: 60%;
+}
+
+.step-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.step-copy h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-stretch: 92%;
+  font-weight: 760;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.step-copy p {
+  color: var(--ink-2);
+}
+
+.steps .specimen {
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.concepts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--gutter);
+  margin: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.concepts div {
+  display: grid;
+  gap: 4px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.concepts dt {
+  font-family: var(--font-display);
+  font-stretch: 100%;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
+.concepts dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-top: 1px solid var(--ink);
+}
+
+.docs-table th,
+.docs-table td {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.docs-table th {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-stretch: 87.5%;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.docs-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 32px;
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.docs-cta-title {
+  font-size: clamp(2.2rem, 4.4vw, 4rem);
+  --stretch: 70%;
+}
+
+.docs-cta .btn-signal {
+  --btn-bg: var(--on-signal);
+  --btn-fg: var(--signal);
+  --btn-line: var(--on-signal);
+}
+
+@media (max-width: 1000px) {
+  .docs-index {
+    display: none;
+  }
+
+  .docs-content {
+    grid-column: 1 / -1;
+  }
+
+  .steps li {
+    grid-template-columns: 4ch minmax(0, 1fr);
+  }
+
+  .steps .specimen {
+    grid-column: 2;
+  }
+
+  .docs-lede,
+  .docs-meta {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .concepts {
+    grid-template-columns: 1fr;
+  }
+
+  .steps li {
+    grid-template-columns: 1fr;
+  }
+
+  .steps .specimen {
+    grid-column: 1;
+  }
+}

@@ -21,6 +21,15 @@ type TenantRequest struct {
 	EnvironmentName string `json:"environment_name"`
 }
 
+type TenantSignupRequest struct {
+	Email           string `json:"email"`
+	Password        string `json:"password"`
+	TenantID        string `json:"tenant_id"`
+	Name            string `json:"name"`
+	EnvironmentID   string `json:"environment_id"`
+	EnvironmentName string `json:"environment_name"`
+}
+
 type EnvironmentRequest struct {
 	TenantID string `json:"tenant_id"`
 	ID       string `json:"environment_id"`
@@ -121,6 +130,7 @@ type RuleRequest struct {
 	EventType     string          `json:"event_type"`
 	Conditions    json.RawMessage `json:"conditions"`
 	Action        json.RawMessage `json:"action"`
+	Actions       json.RawMessage `json:"actions"`
 	StartsAt      *time.Time      `json:"starts_at,omitempty"`
 	EndsAt        *time.Time      `json:"ends_at,omitempty"`
 }
@@ -142,6 +152,33 @@ func ValidateTenantRequest(request TenantRequest) (TenantRequest, error) {
 	if request.EnvironmentName == "" || len(request.EnvironmentName) > 120 {
 		return TenantRequest{}, fmt.Errorf("environment_name must be between 1 and 120 characters")
 	}
+	return request, nil
+}
+
+func ValidateTenantSignupRequest(request TenantSignupRequest) (TenantSignupRequest, error) {
+	request.Email = strings.ToLower(strings.TrimSpace(request.Email))
+	request.Password = strings.TrimSpace(request.Password)
+	request.TenantID = strings.TrimSpace(request.TenantID)
+	request.Name = strings.TrimSpace(request.Name)
+	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
+	request.EnvironmentName = strings.TrimSpace(request.EnvironmentName)
+	if request.Email == "" || !strings.Contains(request.Email, "@") || len(request.Email) > 254 {
+		return TenantSignupRequest{}, fmt.Errorf("email is required and must be valid")
+	}
+	if len(request.Password) < 12 {
+		return TenantSignupRequest{}, fmt.Errorf("password must contain at least 12 characters")
+	}
+	if request.EnvironmentID == "" {
+		request.EnvironmentID = "production"
+	}
+	if request.EnvironmentName == "" {
+		request.EnvironmentName = "Production"
+	}
+	tenant, err := ValidateTenantRequest(TenantRequest{TenantID: request.TenantID, Name: request.Name, EnvironmentID: request.EnvironmentID, EnvironmentName: request.EnvironmentName})
+	if err != nil {
+		return TenantSignupRequest{}, err
+	}
+	request.TenantID, request.Name, request.EnvironmentID, request.EnvironmentName = tenant.TenantID, tenant.Name, tenant.EnvironmentID, tenant.EnvironmentName
 	return request, nil
 }
 
@@ -372,18 +409,29 @@ func ValidateRuleRequest(request RuleRequest) (RuleRequest, error) {
 	if len(request.Conditions) == 0 {
 		request.Conditions = json.RawMessage(`{}`)
 	}
-	if len(request.Action) == 0 {
-		return RuleRequest{}, fmt.Errorf("action is required")
+	if len(request.Action) > 0 && len(request.Actions) > 0 {
+		return RuleRequest{}, fmt.Errorf("provide action or actions, not both")
+	}
+	if len(request.Action) == 0 && len(request.Actions) == 0 {
+		return RuleRequest{}, fmt.Errorf("action or actions is required")
 	}
 	canonicalConditions, err := rules.ValidateConditions(request.Conditions)
 	if err != nil {
 		return RuleRequest{}, err
 	}
-	canonicalAction, err := points.ValidateAction(request.Action)
-	if err != nil {
-		return RuleRequest{}, err
+	if len(request.Actions) > 0 {
+		canonicalActions, err := points.ValidateActions(request.Actions)
+		if err != nil {
+			return RuleRequest{}, err
+		}
+		request.Action = canonicalActions
+	} else {
+		canonicalAction, err := points.ValidateAction(request.Action)
+		if err != nil {
+			return RuleRequest{}, err
+		}
+		request.Action = canonicalAction
 	}
 	request.Conditions = canonicalConditions
-	request.Action = canonicalAction
 	return request, nil
 }

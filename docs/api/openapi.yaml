@@ -1,0 +1,1469 @@
+openapi: 3.0.3
+info:
+  title: MotifEngine API
+  version: 0.2.0
+  description: Tenant-scoped event, rule, points, progression, and reward APIs.
+servers:
+  - url: http://127.0.0.1:18080
+tags:
+  - name: Events
+  - name: Users
+  - name: Rewards
+  - name: Administration
+paths:
+  /v1/admin/auth/signup:
+    post:
+      tags: [Administration]
+      summary: Create a tenant workspace and owner session
+      description: Self-serve tenant signup. Super Admin accounts are provisioned privately for the Ops service.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, tenant_id, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 12 }
+                tenant_id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+                name: { type: string }
+                environment_id: { type: string, default: production }
+                environment_name: { type: string, default: Production }
+      responses:
+        '201': { description: Workspace, owner session, and one-time integration key }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /v1/admin/auth/login:
+    post:
+      tags: [Administration]
+      summary: Create an administrator session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        '200': { description: Session token and administrator identity }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/admin/auth/logout:
+    post:
+      tags: [Administration]
+      security: [{ adminSession: [] }]
+      summary: Revoke the current administrator session
+      responses: { '204': { description: Session revoked } }
+  /v1/admin/auth/me:
+    get:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: Read the current administrator principal
+      responses: { '200': { description: Administrator principal } }
+  /metrics:
+    get:
+      tags: [Administration]
+      summary: Read Prometheus metrics
+      responses: { '200': { description: Prometheus text exposition } }
+  /v1/events:
+    post:
+      tags: [Events]
+      security: [{ integrationKey: [] }]
+      summary: Accept an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventRequest' }
+      responses:
+        '202':
+          description: Event accepted for asynchronous processing
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventReceipt' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /v1/events/{externalEventId}:
+    get:
+      tags: [Events]
+      security: [{ integrationKey: [] }]
+      summary: Read event processing status
+      parameters:
+        - $ref: '#/components/parameters/ExternalEventId'
+      responses:
+        '200':
+          description: Event receipt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventReceipt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/users/{externalUserId}/profile:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read user profile, balances, and mission progress
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200':
+          description: User profile
+          content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } }
+  /v1/users/{externalUserId}/points:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read point balances
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200':
+          description: Point balances
+          content: { application/json: { schema: { $ref: '#/components/schemas/Balances' } } }
+  /v1/users/{externalUserId}/points/transactions:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read point ledger transactions
+      parameters:
+        - $ref: '#/components/parameters/ExternalUserId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Ledger entries ordered newest first
+          content: { application/json: { schema: { $ref: '#/components/schemas/Transactions' } } }
+  /v1/users/{externalUserId}/achievements:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read achievement progress and unlocks
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200':
+          description: Achievement progress
+          content: { application/json: { schema: { $ref: '#/components/schemas/Achievements' } } }
+  /v1/users/{externalUserId}/missions:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read mission progress
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200': { description: Mission progress }
+  /v1/admin/user-profile:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Read a scoped user snapshot for operations
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: User snapshot } }
+  /v1/admin/user-transactions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Read a scoped user ledger
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses: { '200': { description: User ledger entries } }
+  /v1/users/{externalUserId}/progression:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read XP and current level
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200':
+          description: User progression
+          content: { application/json: { schema: { $ref: '#/components/schemas/UserProgression' } } }
+  /v1/users/{externalUserId}/streaks:
+    get:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Read a user's current and longest event streak
+      parameters:
+        - { $ref: '#/components/parameters/ExternalUserId' }
+        - { name: event_type, in: query, schema: { type: string } }
+      responses: { '200': { description: Streak state } }
+  /v1/points/conversions:
+    post:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Convert points atomically between currencies
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ConversionRequest' } } }
+      responses:
+        '201':
+          description: Conversion record
+          content: { application/json: { schema: { $ref: '#/components/schemas/Conversion' } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/rewards/{rewardId}/redemptions:
+    post:
+      tags: [Rewards]
+      security: [{ integrationKey: [] }]
+      summary: Redeem a reward through the configured provider
+      parameters: [{ $ref: '#/components/parameters/RewardId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RedemptionRequest' } } }
+      responses:
+        '201':
+          description: Redemption state (idempotent for the same user and key)
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/redemptions/{redemptionId}:
+    get:
+      tags: [Rewards]
+      security: [{ integrationKey: [] }]
+      summary: Read redemption status
+      parameters: [{ $ref: '#/components/parameters/RedemptionId' }]
+      responses:
+        '200':
+          description: Redemption
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/redemptions/{redemptionId}/retry:
+    post:
+      tags: [Rewards]
+      security: [{ integrationKey: [] }]
+      summary: Retry a failed or interrupted redemption
+      parameters: [{ $ref: '#/components/parameters/RedemptionId' }]
+      responses:
+        '200':
+          description: Redemption delivery state after retry
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemption' } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /v1/admin/tenants:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List tenant environments
+      responses: { '200': { description: Tenant environments } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create a tenant and environment
+      responses: { '201': { description: Tenant created } }
+  /v1/admin/tenants/{tenantId}/status:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Suspend or activate a tenant
+      parameters:
+        - { name: tenantId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, suspended] }
+      responses:
+        '200': { description: Tenant status changed }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/admin/environments:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List environments for a tenant
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Tenant environments } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Add an environment to an existing tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, environment_id, name]
+              properties:
+                tenant_id: { type: string }
+                environment_id: { type: string }
+                name: { type: string }
+      responses: { '201': { description: Environment created } }
+  /v1/admin/credentials:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List integration credentials without raw secrets
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Credential metadata
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Credential' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create an integration credential
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CredentialRequest' } } }
+      responses:
+        '201':
+          description: Credential metadata and the raw key shown once
+          content: { application/json: { schema: { $ref: '#/components/schemas/Credential' } } }
+  /v1/admin/credentials/{credentialId}/rotate:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Rotate an integration credential
+      parameters: [{ name: credentialId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: Rotated credential with raw key shown once } }
+  /v1/admin/credentials/{credentialId}/revoke:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Revoke an integration credential
+      parameters: [{ name: credentialId, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: Revoked credential metadata } }
+  /v1/admin/audit-log:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List tenant and platform mutations
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+        - { name: action, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Audit entries ordered newest first
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } } } }
+  /v1/admin/plans:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List active and inactive platform plans
+      responses:
+        '200':
+          description: Plan definitions
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Plan' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create a manual or subscription plan
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlanRequest' } } }
+      responses: { '201': { description: Plan created } }
+  /v1/admin/plans/{planId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Update a plan
+      parameters: [{ name: planId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PlanRequest' } } }
+      responses: { '200': { description: Plan updated } }
+  /v1/admin/plans/{planId}/archive:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Archive a plan
+      parameters: [{ name: planId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: Plan archived } }
+  /v1/admin/tenant-plans:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Read effective tenant entitlements
+      parameters: [{ name: tenant_id, in: query, schema: { type: string } }]
+      responses:
+        '200':
+          description: Tenant plan assignments
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/TenantPlan' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Assign a plan and optional tenant overrides
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/TenantPlanRequest' } } }
+      responses: { '200': { description: Tenant plan assigned } }
+  /v1/admin/usage:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Read tenant resource usage and effective limits
+      parameters: [{ name: tenant_id, in: query, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: Usage snapshot
+          content: { application/json: { schema: { $ref: '#/components/schemas/Usage' } } }
+  /v1/admin/admin-users:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List administrator identities
+      responses: { '200': { description: Administrator identities without password hashes } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create an administrator identity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, role]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12, format: password }
+                role: { type: string, enum: [super_admin, tenant_admin] }
+                tenant_ids: { type: array, items: { type: string } }
+      responses: { '201': { description: Administrator created } }
+  /v1/admin/diagnostics:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Read live event, execution, and redemption counters
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Operational diagnostics snapshot
+          content: { application/json: { schema: { $ref: '#/components/schemas/Diagnostics' } } }
+  /v1/admin/event-types:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List event contracts
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses: { '200': { description: Event contracts } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Register an event contract
+      responses: { '201': { description: Event contract created } }
+  /v1/admin/event-types/{eventType}/versions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List immutable event contract versions
+      parameters:
+        - { name: eventType, in: path, required: true, schema: { type: string } }
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Event contract version history } }
+  /v1/admin/events:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List received events
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [accepted, processing, processed, failed] } }
+      responses: { '200': { description: Received events } }
+  /v1/admin/events/test:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Ingest a scoped test event from the console
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ScopedEventRequest' } } }
+      responses: { '202': { description: Event accepted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/admin/rules:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List rules
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Rules with their active schedule windows
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Rule' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create a rule draft
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleRequest' } } }
+      responses:
+        '201':
+          description: Rule created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Rule' } } }
+  /v1/admin/rules/{ruleId}/publish:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Publish the current rule version
+      parameters: [{ $ref: '#/components/parameters/RuleId' }]
+      responses:
+        '200':
+          description: Rule published
+          content: { application/json: { schema: { $ref: '#/components/schemas/Rule' } } }
+  /v1/admin/rules/{ruleId}/versions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List immutable rule versions
+      parameters: [{ $ref: '#/components/parameters/RuleId' }]
+      responses:
+        '200':
+          description: Rule version history
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/RuleVersion' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create a new draft rule version
+      parameters: [{ $ref: '#/components/parameters/RuleId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleVersionRequest' } } }
+      responses: { '201': { description: Draft version created } }
+  /v1/admin/rules/{ruleId}/versions/{version}/publish:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Publish a specific immutable rule version
+      parameters:
+        - { $ref: '#/components/parameters/RuleId' }
+        - { name: version, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      responses: { '200': { description: Rule version published } }
+  /v1/admin/currencies:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List point currencies
+      responses: { '200': { description: Currencies } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create a point currency
+      responses: { '201': { description: Currency created } }
+  /v1/admin/missions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List missions
+      responses: { '200': { description: Missions } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create a mission
+      responses: { '201': { description: Mission created } }
+  /v1/admin/goals:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List business goals
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses: { '200': { description: Goals } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create a measurable business goal
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GoalRequest' } } }
+      responses: { '201': { description: Goal created } }
+  /v1/admin/campaigns:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List scheduled campaigns
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses: { '200': { description: Campaigns } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create a scheduled campaign
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CampaignRequest' } } }
+      responses: { '201': { description: Campaign created } }
+  /v1/admin/analytics:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Read campaign event and unique-user measurements
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Campaign analytics } }
+  /v1/admin/metrics:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List business metric definitions for a scope
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Metric definitions
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/MetricDefinition' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create a business metric definition
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MetricRequest' } } }
+      responses:
+        '201':
+          description: Metric definition created
+          content: { application/json: { schema: { $ref: '#/components/schemas/MetricDefinition' } } }
+  /v1/admin/metrics/{metricId}/archive:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Archive a metric definition without deleting history
+      parameters:
+        - { $ref: '#/components/parameters/MetricId' }
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Metric definition archived } }
+  /v1/admin/analytics/funnel:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Measure ordered user conversion through event steps
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/FunnelRequest' } } }
+      responses:
+        '200':
+          description: Funnel report with explicit step denominators
+          content: { application/json: { schema: { $ref: '#/components/schemas/FunnelReport' } } }
+  /v1/admin/analytics/retention:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Measure return-event retention for an event cohort
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RetentionRequest' } } }
+      responses:
+        '200':
+          description: Retention report with cohort denominator and interval rates
+          content: { application/json: { schema: { $ref: '#/components/schemas/RetentionReport' } } }
+  /v1/admin/analytics/segment:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Measure a user segment from event frequency
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SegmentRequest' } } }
+      responses:
+        '200':
+          description: Segment membership counts
+          content: { application/json: { schema: { $ref: '#/components/schemas/SegmentReport' } } }
+  /v1/admin/analytics/experiment:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Measure deterministic weighted experiment control groups
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentRequest' } } }
+      responses:
+        '200':
+          description: Experiment assignment and conversion counts
+          content: { application/json: { schema: { $ref: '#/components/schemas/ExperimentReport' } } }
+  /v1/admin/achievements:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List achievements
+      responses: { '200': { description: Achievements } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create an achievement
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AchievementRequest' } } }
+      responses: { '201': { description: Achievement created } }
+  /v1/admin/levels:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List XP levels
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: XP levels
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Level' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Create an XP level
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LevelRequest' } } }
+      responses:
+        '201':
+          description: XP level created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Level' } } }
+  /v1/admin/rewards:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List active and inactive rewards
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses: { '200': { description: Rewards } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: Configure a digital unlock reward
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RewardRequest' } } }
+      responses: { '201': { description: Reward created } }
+  /v1/admin/rule-executions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List rule and action execution records
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, recorded, failed] } }
+      responses: { '200': { description: Execution records } }
+  /v1/admin/action-executions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Alias for rule execution records
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses: { '200': { description: Execution records } }
+  /v1/admin/redemptions:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }]
+      summary: List reward redemption delivery states
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Redemption records
+          content: { application/json: { schema: { $ref: '#/components/schemas/Redemptions' } } }
+  /v1/admin/redemptions/test:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Test a scoped reward redemption
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AdminRedemptionRequest' } } }
+      responses: { '200': { description: Redemption state }, '202': { description: Delivery is being reconciled } }
+  /v1/admin/redemptions/retry:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Retry a scoped redemption
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, environment_id, redemption_id]
+              properties:
+                tenant_id: { type: string }
+                environment_id: { type: string }
+                redemption_id: { type: string }
+      responses: { '200': { description: Redemption state }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/admin/redemptions/{redemptionId}/attempts:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List provider delivery and reconciliation attempts
+      parameters:
+        - { $ref: '#/components/parameters/RedemptionId' }
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Attempt history
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/RedemptionAttempt' } } } }
+  /v1/admin/reward-providers:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: List scope-specific reward provider configurations
+      parameters:
+        - { name: tenant_id, in: query, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Provider configurations without secrets
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/RewardProviderConfig' } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Create or update a scope-specific reward provider
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RewardProviderConfigRequest' } } }
+      responses:
+        '200':
+          description: Provider configuration without the token
+          content: { application/json: { schema: { $ref: '#/components/schemas/RewardProviderConfig' } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+  /v1/admin/catalog-status:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Archive or activate a catalog resource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, environment_id, resource, id, active]
+              properties:
+                tenant_id: { type: string }
+                environment_id: { type: string }
+                resource: { type: string, enum: [currency, reward, mission, achievement, level] }
+                id: { type: string }
+                active: { type: boolean }
+      responses: { '200': { description: Catalog status updated } }
+  /v1/admin/points/transactions:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Award or spend points for a scoped user
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AdminTransactionRequest' } } }
+      responses: { '201': { description: Ledger entry }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/admin/points/conversions:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }]
+      summary: Convert points for a scoped user
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AdminConversionRequest' } } }
+      responses: { '201': { description: Conversion record }, '409': { $ref: '#/components/responses/Conflict' } }
+components:
+  securitySchemes:
+    integrationKey:
+      type: apiKey
+      in: header
+      name: X-Motif-API-Key
+    adminKey:
+      type: apiKey
+      in: header
+      name: X-Motif-Admin-Key
+    adminSession:
+      type: http
+      scheme: bearer
+  parameters:
+    ExternalUserId: { name: externalUserId, in: path, required: true, schema: { type: string } }
+    ExternalEventId: { name: externalEventId, in: path, required: true, schema: { type: string } }
+    RewardId: { name: rewardId, in: path, required: true, schema: { type: string } }
+    RedemptionId: { name: redemptionId, in: path, required: true, schema: { type: string } }
+    RuleId: { name: ruleId, in: path, required: true, schema: { type: string } }
+    MetricId: { name: metricId, in: path, required: true, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    Offset: { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 100000, default: 0 } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+  responses:
+    Conflict:
+      description: Request conflicts with an existing idempotency key or balance
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ValidationError:
+      description: Validation failed
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Authentication failed
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } } }
+    CredentialRequest:
+      type: object
+      required: [tenant_id, environment_id, label]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        label: { type: string, maxLength: 80 }
+    Credential:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        label: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        active: { type: boolean }
+        integration_api_key: { type: string, description: Present only immediately after create or rotate }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        actor_type: { type: string, enum: [platform_admin, integration, worker, system] }
+        actor_id: { type: string }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string }
+        metadata: { type: object }
+        created_at: { type: string, format: date-time }
+    Plan:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        billing_interval: { type: string, enum: [manual, monthly, yearly] }
+        price_cents: { type: integer, format: int64, minimum: 0 }
+        entitlements: { type: object, additionalProperties: { type: integer, format: int64 } }
+        active: { type: boolean }
+        updated_at: { type: string, format: date-time }
+    PlanRequest:
+      type: object
+      required: [id, name, entitlements]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        billing_interval: { type: string, enum: [manual, monthly, yearly], default: manual }
+        price_cents: { type: integer, format: int64, minimum: 0 }
+        entitlements: { type: object, additionalProperties: { type: integer, format: int64, minimum: 0 } }
+    TenantPlanRequest:
+      type: object
+      required: [tenant_id, plan_id]
+      properties:
+        tenant_id: { type: string }
+        plan_id: { type: string }
+        overrides: { type: object, additionalProperties: { type: integer, minimum: 0 } }
+    TenantPlan:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        plan_id: { type: string }
+        plan_name: { type: string }
+        entitlements: { type: object, additionalProperties: { type: integer, format: int64 } }
+        overrides: { type: object, additionalProperties: { type: integer, format: int64 } }
+        effective: { type: object, additionalProperties: { type: integer, format: int64 } }
+        assigned_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    EventRequest:
+      type: object
+      required: [event_id, event_type, user_id, payload]
+      properties:
+        event_id: { type: string }
+        event_type: { type: string }
+        user_id: { type: string }
+        payload: { type: object }
+    ScopedEventRequest:
+      type: object
+      required: [tenant_id, environment_id, event_id, event_type, user_id, payload]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        event_id: { type: string }
+        event_type: { type: string }
+        user_id: { type: string }
+        payload: { type: object }
+    AdminRedemptionRequest:
+      type: object
+      required: [tenant_id, environment_id, reward_id, external_user_id, idempotency_key]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        reward_id: { type: string }
+        external_user_id: { type: string }
+        idempotency_key: { type: string }
+    AdminTransactionRequest:
+      type: object
+      required: [tenant_id, environment_id, external_user_id, currency, amount, type, idempotency_key]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        external_user_id: { type: string }
+        currency: { type: string }
+        amount: { type: integer, minimum: 1 }
+        type: { type: string, enum: [award, spend] }
+        idempotency_key: { type: string }
+        provenance: { type: object }
+    AdminConversionRequest:
+      type: object
+      required: [tenant_id, environment_id, external_user_id, source_currency, target_currency, amount, rate_numerator, rate_denominator, idempotency_key]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        external_user_id: { type: string }
+        source_currency: { type: string }
+        target_currency: { type: string }
+        amount: { type: integer, minimum: 1 }
+        rate_numerator: { type: integer, minimum: 1 }
+        rate_denominator: { type: integer, minimum: 1 }
+        idempotency_key: { type: string }
+    EventReceipt:
+      type: object
+      properties: { event_id: { type: integer }, external_event_id: { type: string }, status: { type: string }, schema_version: { type: integer, minimum: 1 } }
+    Usage:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        usage: { type: object, additionalProperties: { type: integer, format: int64 } }
+        limits: { type: object, additionalProperties: { type: integer, format: int64 } }
+        generated_at: { type: string, format: date-time }
+    Diagnostics:
+      type: object
+      properties:
+        event_counts: { type: object, additionalProperties: { type: integer } }
+        pending_outbox: { type: integer }
+        failed_rule_executions: { type: integer }
+        retryable_rule_executions: { type: integer }
+        active_rules: { type: integer }
+        failed_redemptions: { type: integer }
+        generated_at: { type: string, format: date-time }
+    Balance:
+      type: object
+      properties: { currency: { type: string }, name: { type: string }, balance: { type: integer }, unit_scale: { type: integer } }
+    Balances:
+      type: object
+      properties: { user_id: { type: string }, balances: { type: array, items: { $ref: '#/components/schemas/Balance' } } }
+    Profile:
+      type: object
+      properties: { user_id: { type: string }, event_count: { type: integer }, balances: { type: array, items: { $ref: '#/components/schemas/Balance' } }, missions: { type: array, items: { type: object } }, achievements: { type: array, items: { type: object } } }
+    Transactions:
+      type: object
+      properties: { user_id: { type: string }, transactions: { type: array, items: { type: object } }, next_cursor: { type: string } }
+    UserProgression:
+      type: object
+      properties:
+        user_id: { type: string }
+        total_xp: { type: integer, format: int64 }
+        level: { type: integer }
+        level_name: { type: string }
+        next_level_xp: { type: integer, format: int64, nullable: true }
+    GoalRequest:
+      type: object
+      required: [tenant_id, environment_id, id, name, event_type, target_count]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        event_type: { type: string }
+        target_count: { type: integer, minimum: 1 }
+    CampaignRequest:
+      type: object
+      required: [tenant_id, environment_id, id, name, event_type]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        id: { type: string }
+        goal_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        event_type: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+    MetricRequest:
+      type: object
+      required: [tenant_id, environment_id, id, name, event_type, aggregation]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        event_type: { type: string }
+        aggregation: { type: string, enum: [count, unique_users] }
+    MetricDefinition:
+      allOf:
+        - $ref: '#/components/schemas/MetricRequest'
+        - type: object
+          properties:
+            active: { type: boolean }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    FunnelStep:
+      type: object
+      required: [name, event_type]
+      properties:
+        name: { type: string, maxLength: 120 }
+        event_type: { type: string }
+    FunnelRequest:
+      type: object
+      required: [tenant_id, environment_id, steps]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        steps: { type: array, minItems: 2, maxItems: 8, items: { $ref: '#/components/schemas/FunnelStep' } }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+    FunnelReport:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        from: { type: string, format: date-time, nullable: true }
+        to: { type: string, format: date-time, nullable: true }
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              event_type: { type: string }
+              users: { type: integer, format: int64 }
+              conversion_rate: { type: number, format: double }
+        generated_at: { type: string, format: date-time }
+    RetentionRequest:
+      type: object
+      required: [tenant_id, environment_id, cohort_event_type, return_event_type]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        cohort_event_type: { type: string }
+        return_event_type: { type: string }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        intervals: { type: array, minItems: 1, maxItems: 5, items: { type: integer, minimum: 1, maximum: 90 } }
+    RetentionReport:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        cohort_event_type: { type: string }
+        return_event_type: { type: string }
+        from: { type: string, format: date-time, nullable: true }
+        to: { type: string, format: date-time, nullable: true }
+        cohort_users: { type: integer, format: int64 }
+        intervals:
+          type: array
+          items:
+            type: object
+            properties:
+              days: { type: integer }
+              returning_users: { type: integer, format: int64 }
+              rate: { type: number, format: double }
+        generated_at: { type: string, format: date-time }
+    SegmentRequest:
+      type: object
+      required: [tenant_id, environment_id, event_type, min_events]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        event_type: { type: string }
+        min_events: { type: integer, minimum: 1, maximum: 100000 }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+    SegmentReport:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        event_type: { type: string }
+        min_events: { type: integer }
+        users: { type: integer, format: int64 }
+        events: { type: integer, format: int64 }
+        from: { type: string, format: date-time, nullable: true }
+        to: { type: string, format: date-time, nullable: true }
+        generated_at: { type: string, format: date-time }
+    ExperimentVariant:
+      type: object
+      required: [id, weight]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$' }
+        weight: { type: integer, minimum: 1, maximum: 99 }
+    ExperimentRequest:
+      type: object
+      required: [tenant_id, environment_id, id, conversion_event_type, variants]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        id: { type: string }
+        conversion_event_type: { type: string }
+        variants: { type: array, minItems: 2, maxItems: 4, items: { $ref: '#/components/schemas/ExperimentVariant' } }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+    ExperimentReport:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        id: { type: string }
+        conversion_event_type: { type: string }
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              weight: { type: integer }
+              assigned_users: { type: integer, format: int64 }
+              converted_users: { type: integer, format: int64 }
+              conversion_rate: { type: number, format: double }
+        from: { type: string, format: date-time, nullable: true }
+        to: { type: string, format: date-time, nullable: true }
+        generated_at: { type: string, format: date-time }
+    RuleStoredAction:
+      description: A normalized single action or an ordered list of actions stored on a rule version.
+      oneOf:
+        - type: object
+        - type: array
+          minItems: 1
+          items: { type: object }
+    RuleRequest:
+      type: object
+      required: [tenant_id, environment_id, name, event_type]
+      description: Supply exactly one of action (legacy single action) or actions (ordered outcomes).
+      oneOf:
+        - required: [action]
+        - required: [actions]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        event_type: { type: string }
+        conditions: { type: object }
+        action: { type: object }
+        actions: { type: array, minItems: 1, items: { type: object } }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true, description: Must be later than starts_at when both are set }
+    Rule:
+      type: object
+      required: [id, tenant_id, environment_id, name, event_type, action, status, version]
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        event_type: { type: string }
+        conditions: { type: object }
+        action: { $ref: '#/components/schemas/RuleStoredAction' }
+        status: { type: string, enum: [draft, published, archived] }
+        version: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        published_at: { type: string, format: date-time, nullable: true }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+    RuleVersionRequest:
+      type: object
+      required: [event_type]
+      description: Supply exactly one of action or actions; the latter preserves outcome order.
+      oneOf:
+        - required: [action]
+        - required: [actions]
+      properties:
+        event_type: { type: string }
+        conditions: { type: object }
+        action: { type: object }
+        actions: { type: array, minItems: 1, items: { type: object } }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+    RuleVersion:
+      type: object
+      required: [id, rule_id, version, event_type, action, status]
+      properties:
+        id: { type: string }
+        rule_id: { type: string }
+        version: { type: integer }
+        event_type: { type: string }
+        conditions: { type: object }
+        action: { $ref: '#/components/schemas/RuleStoredAction' }
+        status: { type: string, enum: [draft, published, archived] }
+        created_at: { type: string, format: date-time }
+        published_at: { type: string, format: date-time, nullable: true }
+        starts_at: { type: string, format: date-time, nullable: true }
+        ends_at: { type: string, format: date-time, nullable: true }
+    LevelRequest:
+      type: object
+      required: [tenant_id, environment_id, level, name, xp_threshold]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        level: { type: integer, minimum: 1 }
+        name: { type: string }
+        xp_threshold: { type: integer, format: int64, minimum: 0 }
+        active: { type: boolean }
+    Level:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        level: { type: integer }
+        name: { type: string }
+        xp_threshold: { type: integer, format: int64 }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Redemptions:
+      type: array
+      items:
+        $ref: '#/components/schemas/AdminRedemption'
+    AdminRedemption:
+      type: object
+      properties:
+        id: { type: string }
+        reward_id: { type: string }
+        reward_name: { type: string }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        external_user_id: { type: string }
+        status: { type: string }
+        idempotency_key: { type: string }
+        provider_reference: { type: string }
+        failure_reason: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        attempt_count: { type: integer }
+        reconciliation_attempts: { type: integer }
+        next_reconciliation_at: { type: string, format: date-time, nullable: true }
+        last_provider_check_error: { type: string }
+    RedemptionAttempt:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        redemption_id: { type: string }
+        kind: { type: string, enum: [delivery, reconciliation] }
+        status: { type: string, enum: [started, pending, fulfilled, failed] }
+        provider_state: { type: string }
+        provider_reference: { type: string }
+        error_message: { type: string }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Achievements:
+      type: object
+      properties: { user_id: { type: string }, achievements: { type: array, items: { $ref: '#/components/schemas/Achievement' } } }
+    AchievementRequest:
+      type: object
+      required: [tenant_id, environment_id, name, event_type, required_count]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        event_type: { type: string }
+        required_count: { type: integer, minimum: 1 }
+    Achievement:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        event_type: { type: string }
+        required_count: { type: integer }
+        progress: { type: integer }
+        unlocked: { type: boolean }
+        unlocked_at: { type: string, format: date-time }
+    ConversionRequest:
+      type: object
+      required: [external_user_id, source_currency, target_currency, source_amount, rate_numerator, rate_denominator, idempotency_key]
+      properties:
+        external_user_id: { type: string }
+        source_currency: { type: string }
+        target_currency: { type: string }
+        source_amount: { type: integer, minimum: 1 }
+        rate_numerator: { type: integer, minimum: 1 }
+        rate_denominator: { type: integer, minimum: 1 }
+        idempotency_key: { type: string }
+    Conversion: { type: object, properties: { id: { type: string }, source_amount: { type: integer }, target_amount: { type: integer } } }
+    RewardRequest:
+      type: object
+      required: [tenant_id, environment_id, name, reward_type, payload]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        name: { type: string }
+        reward_type: { type: string, enum: [digital_unlock] }
+        description: { type: string }
+        cost_currency: { type: string }
+        cost_amount: { type: integer, minimum: 1 }
+        payload: { type: object }
+    RedemptionRequest:
+      type: object
+      required: [external_user_id, idempotency_key]
+      properties: { external_user_id: { type: string }, idempotency_key: { type: string } }
+    Redemption:
+      type: object
+      properties:
+        id: { type: string }
+        reward_id: { type: string }
+        external_user_id: { type: string }
+        status: { type: string, enum: [requested, reserved, delivering, fulfilled, failed, cancelled] }
+        provider_reference: { type: string }
+
+    RewardProviderConfigRequest:
+      type: object
+      required: [tenant_id, environment_id, provider]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        provider: { type: string, enum: [mock, http] }
+        delivery_url: { type: string, format: uri }
+        status_url: { type: string, format: uri, description: "May contain {redemption_id}" }
+        token: { type: string, writeOnly: true }
+        timeout_seconds: { type: integer, minimum: 1, maximum: 60, default: 8 }
+        active: { type: boolean, default: true }
+    RewardProviderConfig:
+      type: object
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        provider: { type: string, enum: [mock, http] }
+        delivery_url: { type: string, format: uri }
+        status_url: { type: string, format: uri }
+        token_configured: { type: boolean }
+        timeout_seconds: { type: integer }
+        active: { type: boolean }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { IconBolt, IconCheck, IconCopy, IconSend, IconTerminal2 } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCopy, IconSend } from '@tabler/icons-react';
 import { fetchScopedEventStatus, submitAdminTestEvent, type EventReceipt } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
 
@@ -30,7 +30,8 @@ export function EventCheck() {
     setSending(true);
     try {
       const payload = JSON.parse(form.payload) as Record<string, unknown>;
-      if (!scope) throw new Error('Select a tenant environment before sending a test event.');
+      if (!payload || Array.isArray(payload) || typeof payload !== 'object') throw new Error('Payload must be a JSON object.');
+      if (!scope) throw new Error('Your workspace membership is still loading.');
       const externalEventID = `console-${Date.now()}`;
       const nextReceipt = await submitAdminTestEvent({
         tenant_id: scope.tenant_id,
@@ -67,55 +68,49 @@ export function EventCheck() {
     window.setTimeout(() => setCopied(false), 1400);
   }
 
+  const receiptTone = receipt?.status === 'processed' ? 'success' : receipt?.status === 'failed' ? 'danger' : 'warning';
+
   return (
-    <section className="panel event-panel" aria-labelledby="event-check-title">
-      <div className="panel-heading">
+    <section id="event-check" className="panel event-check" aria-labelledby="event-check-title">
+      <div className="panel-header">
         <div>
-          <span className="section-label">Live verification</span>
           <h2 id="event-check-title">Send a test event</h2>
+          <p>{scope ? 'Send one event through receive → process and confirm the worker picks it up.' : 'Your workspace membership is loading; verification will be available when it is connected.'}</p>
         </div>
-        <div className="live-mark"><span /> {scope?.environment_name ?? 'scope pending'}</div>
       </div>
-      <p className="panel-intro">Run one real event through the receipt path and watch it move from accepted to processed.</p>
-      <form className="event-form" onSubmit={handleSubmit}>
-        <div className="form-grid">
-          <label>
-            <span>Event type</span>
-            <input value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })} />
+      <form className="panel-body form-stack" onSubmit={handleSubmit}>
+        <div className="form-row">
+          <label className="field">
+            <span className="field-label">Event type</span>
+            <input className="mono" value={form.event_type} onChange={(event) => setForm({ ...form, event_type: event.target.value })} required spellCheck={false} />
           </label>
-          <label>
-            <span>External user ID</span>
-            <input value={form.user_id} onChange={(event) => setForm({ ...form, user_id: event.target.value })} />
+          <label className="field">
+            <span className="field-label">External user ID</span>
+            <input className="mono" value={form.user_id} onChange={(event) => setForm({ ...form, user_id: event.target.value })} required spellCheck={false} />
           </label>
         </div>
-        <label>
-          <span>Payload</span>
-          <div className="code-field">
-            <IconTerminal2 size={15} stroke={1.5} />
-            <textarea value={form.payload} onChange={(event) => setForm({ ...form, payload: event.target.value })} spellCheck={false} />
-          </div>
+        <label className="field">
+          <span className="field-label">Payload <em>JSON object</em></span>
+          <textarea className="code-input" rows={4} value={form.payload} onChange={(event) => setForm({ ...form, payload: event.target.value })} spellCheck={false} required />
         </label>
-        <div className="form-actions">
-          {error && <span className="form-error" role="alert">{error}</span>}
-          <button className="primary-button" type="submit" disabled={sending}>
-            <IconSend size={16} stroke={1.8} />
-            {sending ? 'Sending…' : 'Send event'}
+        {error && <p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span></p>}
+        {receipt && (
+          <div className="receipt" role="status">
+            <span className={`badge capitalize badge-${receiptTone}`}><span className="dot" />{receipt.status}</span>
+            <span className="receipt-copy"><strong>Receipt #{receipt.event_id}</strong><code>{receipt.external_event_id}</code></span>
+            <button className="icon-button ghost" type="button" onClick={copyReceipt} aria-label={copied ? 'Event ID copied' : 'Copy event ID'}>
+              {copied ? <IconCheck size={15} /> : <IconCopy size={15} />}
+            </button>
+          </div>
+        )}
+        <div className="form-footer">
+          <span className="form-footer-note">{scope ? `Sends to ${scope.environment_name}` : 'No environment connected'}</span>
+          <button className="primary-button" type="submit" disabled={sending || !scope}>
+            <IconSend size={15} stroke={1.75} />
+            {sending ? 'Sending…' : scope ? 'Send event' : 'Waiting for workspace'}
           </button>
         </div>
       </form>
-      {receipt && (
-        <div className="receipt" role="status">
-          <div className="receipt-icon"><IconCheck size={16} stroke={2} /></div>
-          <div>
-            <strong>Receipt #{receipt.event_id}</strong>
-            <span>{receipt.external_event_id}</span>
-          </div>
-          <div className="receipt-status"><IconBolt size={14} stroke={1.8} /> {receipt.status}</div>
-          <button className="icon-button" type="button" onClick={copyReceipt} aria-label="Copy event ID">
-            {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
-          </button>
-        </div>
-      )}
     </section>
   );
 }

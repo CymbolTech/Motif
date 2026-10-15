@@ -66,6 +66,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.login(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/admin/auth/signup" && r.Method == http.MethodPost {
+		h.signup(w, r)
+		return
+	}
 	if r.URL.Path == "/v1/admin/auth/logout" && r.Method == http.MethodPost {
 		h.logout(w, r)
 		return
@@ -220,12 +224,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listCurrencies(w, r)
 		return
 	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/currencies/") {
+		h.updateCatalogResource(w, r, "currency")
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/missions" {
 		h.createMission(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/missions" {
 		h.listMissions(w, r)
+		return
+	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/missions/") {
+		h.updateCatalogResource(w, r, "mission")
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/goals" {
@@ -236,12 +248,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listGoals(w, r)
 		return
 	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/goals/") {
+		h.updateEngagementResource(w, r, "goal")
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/campaigns" {
 		h.createCampaign(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/campaigns" {
 		h.listCampaigns(w, r)
+		return
+	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/campaigns/") {
+		h.updateEngagementResource(w, r, "campaign")
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/metrics" {
@@ -258,6 +278,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/analytics" {
 		h.analytics(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/analytics/query" {
+		h.reportQuery(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/reports/dashboard" {
+		h.reportDashboard(w, r)
+		return
+	}
+	if r.Method == http.MethodPut && r.URL.Path == "/v1/admin/reports/dashboard" {
+		h.updateReportDashboard(w, r)
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/analytics/funnel" {
@@ -284,6 +316,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listRewards(w, r)
 		return
 	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/rewards/") {
+		h.updateCatalogResource(w, r, "reward")
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/achievements" {
 		h.createAchievement(w, r)
 		return
@@ -292,12 +328,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listAchievements(w, r)
 		return
 	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/achievements/") {
+		h.updateCatalogResource(w, r, "achievement")
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/levels" {
 		h.createLevel(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/levels" {
 		h.listLevels(w, r)
+		return
+	}
+	if r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/v1/admin/levels/") {
+		h.updateCatalogResource(w, r, "level")
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/redemptions" {
@@ -367,6 +411,13 @@ func principalResponse(principal adminauth.Principal) adminPrincipalResponse {
 	return adminPrincipalResponse{ID: principal.ID, Email: principal.Email, Role: principal.Role, TenantIDs: principal.TenantIDs}
 }
 
+func auditActorType(principal adminauth.Principal) string {
+	if principal.IsSuperAdmin() {
+		return "super_admin"
+	}
+	return "tenant_admin"
+}
+
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var request loginRequest
 	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
@@ -382,8 +433,91 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "admin_login_failed", "admin login could not be completed")
 		return
 	}
-	_ = audit.Record(r.Context(), h.db, audit.Entry{ActorType: "platform_admin", ActorID: principal.ID, Action: "admin.login", ResourceType: "admin_session", ResourceID: principal.ID})
+	_ = audit.Record(r.Context(), h.db, audit.Entry{ActorType: auditActorType(principal), ActorID: principal.ID, Action: "admin.login", ResourceType: "admin_session", ResourceID: principal.ID})
 	writeJSON(w, http.StatusOK, map[string]any{"token": token, "expires_in": int(adminauth.SessionTTL.Seconds()), "admin": principalResponse(principal)})
+}
+
+// signup provisions the first tenant workspace and its owner in one public,
+// self-serve flow. Platform administrators remain separate and are created by
+// bootstrap configuration for the future Ops service.
+func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
+	var request TenantSignupRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	validated, err := ValidateTenantSignupRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_signup", err.Error())
+		return
+	}
+	var emailExists bool
+	if err := h.db.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM admin_users WHERE email = $1)`, validated.Email).Scan(&emailExists); err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "account could not be created")
+		return
+	}
+	if emailExists {
+		writeError(w, http.StatusConflict, "admin_user_exists", "an account with this email already exists")
+		return
+	}
+	integrationKey, err := generateIntegrationKey()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
+		return
+	}
+	tx, err := h.db.Begin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace could not be created")
+		return
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err := tx.Exec(r.Context(), `INSERT INTO tenants (id, name) VALUES ($1, $2)`, validated.TenantID, validated.Name); err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "tenant_exists", "this workspace id is already in use")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace could not be created")
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `INSERT INTO environments (tenant_id, id, name) VALUES ($1, $2, $3)`, validated.TenantID, validated.EnvironmentID, validated.EnvironmentName); err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace environment could not be created")
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by) VALUES ($1, $2, $3, 'default', 'tenant_signup')`, validated.TenantID, validated.EnvironmentID, auth.Digest(integrationKey)); err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace credential could not be created")
+		return
+	}
+	if _, err := tx.Exec(r.Context(), `INSERT INTO tenant_plans (tenant_id, plan_id) VALUES ($1, 'starter')`, validated.TenantID); err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace plan could not be assigned")
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace could not be created")
+		return
+	}
+	user, err := h.authStore.CreateUser(r.Context(), validated.Email, validated.Password, adminauth.RoleTenantAdmin, []string{validated.TenantID})
+	if err != nil {
+		_, _ = h.db.Exec(r.Context(), `DELETE FROM tenants WHERE id = $1`, validated.TenantID)
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "admin_user_exists", "an account with this email already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "signup_failed", "account could not be created")
+		return
+	}
+	principal, token, err := h.authStore.Authenticate(r.Context(), validated.Email, validated.Password, r.UserAgent(), remoteIP(r))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "signup_failed", "account session could not be started")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: validated.TenantID, EnvironmentID: validated.EnvironmentID, ActorType: "tenant_admin", ActorID: user.ID, Action: "tenant.signup", ResourceType: "tenant", ResourceID: validated.TenantID})
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"token":           token,
+		"expires_in":      int(adminauth.SessionTTL.Seconds()),
+		"admin":           principalResponse(principal),
+		"tenant":          tenantResponse{TenantID: validated.TenantID, Name: validated.Name, EnvironmentID: validated.EnvironmentID, EnvironmentName: validated.EnvironmentName, Status: "active"},
+		"integration_key": integrationKey,
+	})
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
@@ -393,7 +527,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 		principal, err := h.authStore.Lookup(r.Context(), rawToken)
 		_ = h.authStore.Revoke(r.Context(), rawToken)
 		if err == nil {
-			_ = audit.Record(r.Context(), h.db, audit.Entry{ActorType: "platform_admin", ActorID: principal.ID, Action: "admin.logout", ResourceType: "admin_session", ResourceID: principal.ID})
+			_ = audit.Record(r.Context(), h.db, audit.Entry{ActorType: auditActorType(principal), ActorID: principal.ID, Action: "admin.logout", ResourceType: "admin_session", ResourceID: principal.ID})
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -478,6 +612,15 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 		return r.Method == http.MethodPost && principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
 	}
 	if r.Method != http.MethodGet {
+		if r.Method == http.MethodPatch && isEditableAdminResourcePath(path) {
+			return requestBodyTenant(r, principal)
+		}
+		// Rule version and publish actions do not carry a tenant body. They must
+		// carry the selected scope in the query string so tenant administrators
+		// can be authorized before the handler looks up the rule by id.
+		if isScopedRuleAction(r.URL.Path) {
+			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
+		}
 		allowedCreate := map[string]bool{
 			"/v1/admin/event-types":          true,
 			"/v1/admin/environments":         true,
@@ -494,6 +637,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 			"/v1/admin/analytics/retention":  true,
 			"/v1/admin/analytics/segment":    true,
 			"/v1/admin/analytics/experiment": true,
+			"/v1/admin/reports/dashboard":    true,
 			"/v1/admin/rewards":              true,
 			"/v1/admin/reward-providers":     true,
 			"/v1/admin/achievements":         true,
@@ -512,6 +656,30 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 	}
 	tenantID := strings.TrimSpace(r.URL.Query().Get("tenant_id"))
 	return tenantID != "" && principal.AllowsTenant(tenantID)
+}
+
+func isEditableAdminResourcePath(path string) bool {
+	for _, resource := range []string{"currencies", "missions", "goals", "campaigns", "rewards", "achievements", "levels"} {
+		if strings.HasPrefix(path, "/v1/admin/"+resource+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func isScopedRuleAction(path string) bool {
+	if strings.HasPrefix(path, "/v1/admin/rules/") && strings.HasSuffix(path, "/versions") {
+		_, ok := parseRuleVersionCollectionPath(path)
+		return ok
+	}
+	if strings.HasPrefix(path, "/v1/admin/rules/") && strings.HasSuffix(path, "/publish") {
+		if _, ok := parseRuleVersionCollectionPath(strings.TrimSuffix(path, "/publish")); ok {
+			return true
+		}
+		_, _, ok := parseRuleVersionPublishPath(path)
+		return ok
+	}
+	return false
 }
 
 func requestBodyTenant(r *http.Request, principal adminauth.Principal) bool {
@@ -1841,6 +2009,15 @@ func (h *Handler) listRuleVersions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
 		return
 	}
+	requestedTenantID, requestedEnvironmentID := strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	if err := h.verifyRuleScope(r.Context(), ruleID, requestedTenantID, requestedEnvironmentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id must be provided together")
+		}
+		return
+	}
 	rows, err := h.db.Query(r.Context(), `
 		SELECT id, rule_id, version, event_type, conditions, action, status, created_at, published_at, starts_at, ends_at
 		FROM rule_versions
@@ -1974,12 +2151,24 @@ func (h *Handler) createRuleVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
 		return
 	}
+	requestedTenantID, requestedEnvironmentID := strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))
+	if err := h.verifyRuleScope(r.Context(), ruleID, requestedTenantID, requestedEnvironmentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id must be provided together")
+		}
+		return
+	}
 	var request struct {
-		EventType  string          `json:"event_type"`
-		Conditions json.RawMessage `json:"conditions"`
-		Action     json.RawMessage `json:"action"`
-		StartsAt   *time.Time      `json:"starts_at,omitempty"`
-		EndsAt     *time.Time      `json:"ends_at,omitempty"`
+		Name        *string         `json:"name,omitempty"`
+		Description *string         `json:"description,omitempty"`
+		EventType   string          `json:"event_type"`
+		Conditions  json.RawMessage `json:"conditions"`
+		Action      json.RawMessage `json:"action"`
+		Actions     json.RawMessage `json:"actions"`
+		StartsAt    *time.Time      `json:"starts_at,omitempty"`
+		EndsAt      *time.Time      `json:"ends_at,omitempty"`
 	}
 	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 64*1024), &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
@@ -1989,7 +2178,7 @@ func (h *Handler) createRuleVersion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_rule", "event_type is required")
 		return
 	}
-	normalized, err := ValidateRuleRequest(RuleRequest{TenantID: "valid", EnvironmentID: "valid", Name: "version", EventType: request.EventType, Conditions: request.Conditions, Action: request.Action, StartsAt: request.StartsAt, EndsAt: request.EndsAt})
+	normalized, err := ValidateRuleRequest(RuleRequest{TenantID: "valid", EnvironmentID: "valid", Name: "version", EventType: request.EventType, Conditions: request.Conditions, Action: request.Action, Actions: request.Actions, StartsAt: request.StartsAt, EndsAt: request.EndsAt})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_rule", err.Error())
 		return
@@ -2001,13 +2190,28 @@ func (h *Handler) createRuleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback(r.Context()) }()
 	var version int
-	var tenantID, environmentID string
-	if err := tx.QueryRow(r.Context(), `SELECT coalesce(max(v.version), 0) + 1, r.tenant_id, r.environment_id FROM rules r LEFT JOIN rule_versions v ON v.rule_id = r.id WHERE r.id = $1 GROUP BY r.id, r.tenant_id, r.environment_id`, ruleID).Scan(&version, &tenantID, &environmentID); err != nil {
+	var tenantID, environmentID, currentName, currentDescription string
+	if err := tx.QueryRow(r.Context(), `SELECT coalesce(max(v.version), 0) + 1, r.tenant_id, r.environment_id, r.name, r.description FROM rules r LEFT JOIN rule_versions v ON v.rule_id = r.id WHERE r.id = $1 GROUP BY r.id, r.tenant_id, r.environment_id, r.name, r.description`, ruleID).Scan(&version, &tenantID, &environmentID, &currentName, &currentDescription); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "rule_version_creation_failed", "rule version could not be created")
+		return
+	}
+	updatedName, updatedDescription := currentName, currentDescription
+	if request.Name != nil {
+		updatedName = strings.TrimSpace(*request.Name)
+		if updatedName == "" {
+			writeError(w, http.StatusBadRequest, "invalid_rule", "name is required")
+			return
+		}
+	}
+	if request.Description != nil {
+		updatedDescription = strings.TrimSpace(*request.Description)
+	}
+	if len(updatedName) > 120 || len(updatedDescription) > 500 {
+		writeError(w, http.StatusBadRequest, "invalid_rule", "name must be 120 characters or fewer and description must be 500 characters or fewer")
 		return
 	}
 	versionID := fmt.Sprintf("%s:v%d", ruleID, version)
@@ -2016,7 +2220,11 @@ func (h *Handler) createRuleVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rule ruleResponse
-	if err := tx.QueryRow(r.Context(), `UPDATE rules SET event_type = $2, conditions = $3::jsonb, action = $4::jsonb, starts_at = $5, ends_at = $6, version = $7, status = 'draft', published_at = NULL, updated_at = now() WHERE id = $1 RETURNING id, tenant_id, environment_id, name, description, event_type, conditions, action, status, version, created_at, updated_at, published_at, starts_at, ends_at`, ruleID, normalized.EventType, normalized.Conditions, normalized.Action, normalized.StartsAt, normalized.EndsAt, version).Scan(&rule.ID, &rule.TenantID, &rule.EnvironmentID, &rule.Name, &rule.Description, &rule.EventType, &rule.Conditions, &rule.Action, &rule.Status, &rule.Version, &rule.CreatedAt, &rule.UpdatedAt, &rule.PublishedAt, &rule.StartsAt, &rule.EndsAt); err != nil {
+	if err := tx.QueryRow(r.Context(), `UPDATE rules SET name = $2, description = $3, event_type = $4, conditions = $5::jsonb, action = $6::jsonb, starts_at = $7, ends_at = $8, version = $9, status = 'draft', published_at = NULL, updated_at = now() WHERE id = $1 RETURNING id, tenant_id, environment_id, name, description, event_type, conditions, action, status, version, created_at, updated_at, published_at, starts_at, ends_at`, ruleID, updatedName, updatedDescription, normalized.EventType, normalized.Conditions, normalized.Action, normalized.StartsAt, normalized.EndsAt, version).Scan(&rule.ID, &rule.TenantID, &rule.EnvironmentID, &rule.Name, &rule.Description, &rule.EventType, &rule.Conditions, &rule.Action, &rule.Status, &rule.Version, &rule.CreatedAt, &rule.UpdatedAt, &rule.PublishedAt, &rule.StartsAt, &rule.EndsAt); err != nil {
+		if isUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "rule_exists", "a rule with this name already exists in the environment")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "rule_version_creation_failed", "rule version could not be created")
 		return
 	}
@@ -2026,6 +2234,7 @@ func (h *Handler) createRuleVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = tenantID
 	_ = environmentID
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: rule.TenantID, EnvironmentID: rule.EnvironmentID, ActorType: "platform_admin", Action: "rule.version_created", ResourceType: "rule", ResourceID: rule.ID, Metadata: auditMetadata(map[string]any{"version": rule.Version})})
 	writeJSON(w, http.StatusCreated, rule)
 }
 
@@ -2065,6 +2274,14 @@ func (h *Handler) publishRule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
 		return
 	}
+	if err := h.verifyRuleScope(r.Context(), ruleID, strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id must be provided together")
+		}
+		return
+	}
 	var version int
 	if err := h.db.QueryRow(r.Context(), `SELECT version FROM rules WHERE id = $1 AND status <> 'archived'`, ruleID).Scan(&version); errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "rule_not_found", "rule was not found")
@@ -2090,6 +2307,14 @@ func (h *Handler) publishRuleVersion(w http.ResponseWriter, r *http.Request) {
 	ruleID, version, ok := parseRuleVersionPublishPath(r.URL.Path)
 	if !ok {
 		writeError(w, http.StatusNotFound, "rule_version_not_found", "rule version was not found")
+		return
+	}
+	if err := h.verifyRuleScope(r.Context(), ruleID, strings.TrimSpace(r.URL.Query().Get("tenant_id")), strings.TrimSpace(r.URL.Query().Get("environment_id"))); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "rule_version_not_found", "rule version was not found")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_scope", "tenant_id and environment_id must be provided together")
+		}
 		return
 	}
 	rule, err := h.publishRuleVersionTx(r.Context(), ruleID, version)
@@ -2148,6 +2373,26 @@ func parseRuleVersionPublishPath(path string) (string, int, bool) {
 	}
 	version, err := strconv.Atoi(parts[1])
 	return parts[0], version, err == nil && version > 0
+}
+
+// verifyRuleScope keeps id-based rule actions inside the scope explicitly
+// selected by a tenant administrator. Super Admin callers may omit the query
+// parameters for backwards compatibility with the platform console.
+func (h *Handler) verifyRuleScope(ctx context.Context, ruleID, tenantID, environmentID string) error {
+	if tenantID == "" && environmentID == "" {
+		return nil
+	}
+	if tenantID == "" || environmentID == "" {
+		return errors.New("incomplete rule scope")
+	}
+	var exists bool
+	if err := h.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM rules WHERE id = $1 AND tenant_id = $2 AND environment_id = $3)`, ruleID, tenantID, environmentID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 func parseListOffset(r *http.Request) (int, error) {
@@ -3445,6 +3690,268 @@ func (h *Handler) updateCatalogStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "catalog.status_changed", ResourceType: request.Resource, ResourceID: request.ID, Metadata: auditMetadata(map[string]any{"active": request.Active})})
 	writeJSON(w, http.StatusOK, map[string]any{"resource": request.Resource, "id": request.ID, "active": request.Active})
+}
+
+func catalogIDFromPath(path, resource string) (string, bool) {
+	prefix := "/v1/admin/" + resource + "/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	id := strings.TrimPrefix(path, prefix)
+	if id == "" || strings.Contains(id, "/") || len(id) > 128 {
+		return "", false
+	}
+	return id, true
+}
+
+func (h *Handler) updateCatalogResource(w http.ResponseWriter, r *http.Request, resource string) {
+	id, ok := catalogIDFromPath(r.URL.Path, map[string]string{"currency": "currencies", "mission": "missions", "achievement": "achievements", "level": "levels", "reward": "rewards"}[resource])
+	if !ok {
+		writeError(w, http.StatusNotFound, "catalog_resource_not_found", "catalog resource was not found")
+		return
+	}
+	switch resource {
+	case "currency":
+		var request points.CurrencyRequest
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 32*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request, err := points.ValidateCurrencyRequest(request)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_currency", err.Error())
+			return
+		}
+		tx, err := h.db.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency could not be updated")
+			return
+		}
+		defer func() { _ = tx.Rollback(r.Context()) }()
+		var currency points.Currency
+		err = tx.QueryRow(r.Context(), `UPDATE currencies SET name = $4, unit_scale = $5, updated_at = now() WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, code, name, unit_scale, policy_version, active, created_at, updated_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.UnitScale).
+			Scan(&currency.ID, &currency.TenantID, &currency.EnvironmentID, &currency.Code, &currency.Name, &currency.UnitScale, &currency.PolicyVersion, &currency.Active, &currency.CreatedAt, &currency.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "currency_not_found", "currency was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency could not be updated")
+			return
+		}
+		var nextVersion int
+		if err = tx.QueryRow(r.Context(), `SELECT policy_version + 1 FROM currencies WHERE id = $1 FOR UPDATE`, id).Scan(&nextVersion); err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency policy could not be updated")
+			return
+		}
+		if _, err = tx.Exec(r.Context(), `INSERT INTO currency_policy_versions (currency_id, version, policy) VALUES ($1, $2, $3::jsonb)`, id, nextVersion, request.Policy); err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency policy could not be updated")
+			return
+		}
+		if err = tx.QueryRow(r.Context(), `UPDATE currencies SET policy_version = $2, updated_at = now() WHERE id = $1 RETURNING policy_version, updated_at`, id, nextVersion).Scan(&currency.PolicyVersion, &currency.UpdatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency policy could not be updated")
+			return
+		}
+		currency.Policy = request.Policy
+		if err = tx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "currency_update_failed", "currency could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: currency.TenantID, EnvironmentID: currency.EnvironmentID, ActorType: "platform_admin", Action: "currency.updated", ResourceType: "currency", ResourceID: currency.ID})
+		writeJSON(w, http.StatusOK, currency)
+	case "mission":
+		var request struct {
+			TenantID      string `json:"tenant_id"`
+			EnvironmentID string `json:"environment_id"`
+			Name          string `json:"name"`
+			EventType     string `json:"event_type"`
+			TargetCount   int    `json:"target_count"`
+		}
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request.TenantID, request.EnvironmentID, request.Name, request.EventType = strings.TrimSpace(request.TenantID), strings.TrimSpace(request.EnvironmentID), strings.TrimSpace(request.Name), strings.TrimSpace(request.EventType)
+		if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.Name == "" || len(request.Name) > 120 || !eventTypePattern.MatchString(request.EventType) || request.TargetCount < 1 || request.TargetCount > 100000 {
+			writeError(w, http.StatusBadRequest, "invalid_mission", "tenant, environment, name, event_type, and target_count are required and valid")
+			return
+		}
+		var mission missionResponse
+		err := h.db.QueryRow(r.Context(), `UPDATE missions SET name = $4, event_type = $5, target_count = $6 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, name, event_type, target_count, active, created_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.EventType, request.TargetCount).Scan(&mission.ID, &mission.TenantID, &mission.EnvironmentID, &mission.Name, &mission.EventType, &mission.TargetCount, &mission.Active, &mission.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "mission_not_found", "mission was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "mission_update_failed", "mission could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: mission.TenantID, EnvironmentID: mission.EnvironmentID, ActorType: "platform_admin", Action: "mission.updated", ResourceType: "mission", ResourceID: mission.ID})
+		writeJSON(w, http.StatusOK, mission)
+	case "achievement":
+		var request progression.AchievementRequest
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 32*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request, err := progression.ValidateAchievementRequest(request)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_achievement", err.Error())
+			return
+		}
+		var achievement progression.Achievement
+		err = h.db.QueryRow(r.Context(), `UPDATE achievements SET name = $4, description = $5, event_type = $6, required_count = $7 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, name, description, event_type, required_count, active, created_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.Description, request.EventType, request.RequiredCount).Scan(&achievement.ID, &achievement.TenantID, &achievement.EnvironmentID, &achievement.Name, &achievement.Description, &achievement.EventType, &achievement.RequiredCount, &achievement.Active, &achievement.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "achievement_not_found", "achievement was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "achievement_update_failed", "achievement could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: achievement.TenantID, EnvironmentID: achievement.EnvironmentID, ActorType: "platform_admin", Action: "achievement.updated", ResourceType: "achievement", ResourceID: achievement.ID})
+		writeJSON(w, http.StatusOK, achievement)
+	case "level":
+		var request progression.LevelRequest
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request, err := progression.ValidateLevelRequest(request)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_level", err.Error())
+			return
+		}
+		var level progression.Level
+		err = h.db.QueryRow(r.Context(), `UPDATE level_definitions SET name = $4, xp_threshold = $5 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, level, name, xp_threshold, active, created_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.XPThreshold).Scan(&level.ID, &level.TenantID, &level.EnvironmentID, &level.Level, &level.Name, &level.XPThreshold, &level.Active, &level.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "level_not_found", "level was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "level_update_failed", "level could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: level.TenantID, EnvironmentID: level.EnvironmentID, ActorType: "platform_admin", Action: "level.updated", ResourceType: "level", ResourceID: level.ID})
+		writeJSON(w, http.StatusOK, level)
+	case "reward":
+		var request rewards.RewardRequest
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 64*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request, err := rewards.ValidateRewardRequest(request)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_reward", err.Error())
+			return
+		}
+		tx, err := h.db.Begin(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "reward_update_failed", "reward could not be updated")
+			return
+		}
+		defer func() { _ = tx.Rollback(r.Context()) }()
+		var costCurrencyID *string
+		if request.CostCurrency != "" {
+			var currencyID string
+			if err = tx.QueryRow(r.Context(), `SELECT id FROM currencies WHERE tenant_id = $1 AND environment_id = $2 AND code = $3 AND active = true`, request.TenantID, request.EnvironmentID, request.CostCurrency).Scan(&currencyID); errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "currency_not_found", "cost currency was not found in the tenant environment")
+				return
+			} else if err != nil {
+				writeError(w, http.StatusInternalServerError, "reward_update_failed", "reward currency could not be read")
+				return
+			}
+			costCurrencyID = &currencyID
+		}
+		var reward rewards.Reward
+		err = tx.QueryRow(r.Context(), `UPDATE rewards SET name = $4, description = $5, cost_currency_id = $6, cost_amount = NULLIF($7, 0), payload = $8::jsonb, updated_at = now() WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, name, reward_type, description, COALESCE((SELECT code FROM currencies WHERE id = cost_currency_id), ''), COALESCE(cost_amount, 0), payload, active, created_at, updated_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.Description, costCurrencyID, request.CostAmount, request.Payload).Scan(&reward.ID, &reward.TenantID, &reward.EnvironmentID, &reward.Name, &reward.RewardType, &reward.Description, &reward.CostCurrency, &reward.CostAmount, &reward.Payload, &reward.Active, &reward.CreatedAt, &reward.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "reward_not_found", "reward was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "reward_update_failed", "reward could not be updated")
+			return
+		}
+		if err = tx.Commit(r.Context()); err != nil {
+			writeError(w, http.StatusInternalServerError, "reward_update_failed", "reward could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: reward.TenantID, EnvironmentID: reward.EnvironmentID, ActorType: "platform_admin", Action: "reward.updated", ResourceType: "reward", ResourceID: reward.ID})
+		writeJSON(w, http.StatusOK, reward)
+	}
+}
+
+func (h *Handler) updateEngagementResource(w http.ResponseWriter, r *http.Request, resource string) {
+	id, ok := catalogIDFromPath(r.URL.Path, resource+"s")
+	if !ok {
+		writeError(w, http.StatusNotFound, resource+"_not_found", resource+" was not found")
+		return
+	}
+	if resource == "goal" {
+		var request GoalRequest
+		if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+			return
+		}
+		request.ID = id
+		var err error
+		request, err = ValidateGoalRequest(request)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_goal", err.Error())
+			return
+		}
+		var goal goalResponse
+		err = h.db.QueryRow(r.Context(), `UPDATE goals SET name = $4, description = $5, event_type = $6, target_count = $7 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, name, description, event_type, target_count, active, created_at`, id, request.TenantID, request.EnvironmentID, request.Name, request.Description, request.EventType, request.TargetCount).Scan(&goal.ID, &goal.TenantID, &goal.EnvironmentID, &goal.Name, &goal.Description, &goal.EventType, &goal.TargetCount, &goal.Active, &goal.CreatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "goal_not_found", "goal was not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "goal_update_failed", "goal could not be updated")
+			return
+		}
+		_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: goal.TenantID, EnvironmentID: goal.EnvironmentID, ActorType: "platform_admin", Action: "goal.updated", ResourceType: "goal", ResourceID: goal.ID})
+		writeJSON(w, http.StatusOK, goal)
+		return
+	}
+	var request CampaignRequest
+	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
+		return
+	}
+	request.ID = id
+	var err error
+	request, err = ValidateCampaignRequest(request)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_campaign", err.Error())
+		return
+	}
+	if request.GoalID != "" {
+		var scope string
+		if err = h.db.QueryRow(r.Context(), `SELECT tenant_id || ':' || environment_id FROM goals WHERE id = $1`, request.GoalID).Scan(&scope); errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "goal_not_found", "goal was not found")
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, "goal_lookup_failed", "goal could not be read")
+			return
+		} else if scope != request.TenantID+":"+request.EnvironmentID {
+			writeError(w, http.StatusBadRequest, "goal_scope_mismatch", "goal must belong to the campaign scope")
+			return
+		}
+	}
+	var campaign campaignResponse
+	err = h.db.QueryRow(r.Context(), `UPDATE campaigns SET goal_id = NULLIF($4,''), name = $5, description = $6, event_type = $7, starts_at = $8, ends_at = $9 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3 RETURNING id, tenant_id, environment_id, COALESCE(goal_id,''), name, description, event_type, starts_at, ends_at, active, created_at`, id, request.TenantID, request.EnvironmentID, request.GoalID, request.Name, request.Description, request.EventType, request.StartsAt, request.EndsAt).Scan(&campaign.ID, &campaign.TenantID, &campaign.EnvironmentID, &campaign.GoalID, &campaign.Name, &campaign.Description, &campaign.EventType, &campaign.StartsAt, &campaign.EndsAt, &campaign.Active, &campaign.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "campaign_not_found", "campaign was not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "campaign_update_failed", "campaign could not be updated")
+		return
+	}
+	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: campaign.TenantID, EnvironmentID: campaign.EnvironmentID, ActorType: "platform_admin", Action: "campaign.updated", ResourceType: "campaign", ResourceID: campaign.ID})
+	writeJSON(w, http.StatusOK, campaign)
 }
 
 func generateIntegrationKey() (string, error) {

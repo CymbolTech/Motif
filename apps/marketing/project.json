@@ -6,7 +6,7 @@
     "build": {
       "command": "pnpm --dir apps/marketing build",
       "options": { "cwd": "." },
-      "outputs": ["{workspaceRoot}/apps/marketing/.output", "{workspaceRoot}/apps/marketing/dist"]
+      "outputs": ["{workspaceRoot}/apps/marketing/.next"]
     },
     "test": {
       "command": "pnpm --dir apps/marketing test",

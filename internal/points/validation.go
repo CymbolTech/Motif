@@ -104,6 +104,40 @@ func ValidateAction(raw json.RawMessage) (json.RawMessage, error) {
 	return canonical, nil
 }
 
+// ValidateActions accepts the current single-action object and the multi-action
+// array used by the automation builder. The canonical form is always an array
+// so the worker can execute each effect in order.
+func ValidateActions(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("actions are required")
+	}
+	if trimmed[0] != '[' {
+		canonical, err := ValidateAction(trimmed)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal([]json.RawMessage{canonical})
+	}
+
+	var actions []json.RawMessage
+	if err := json.Unmarshal(trimmed, &actions); err != nil {
+		return nil, fmt.Errorf("actions must be a JSON array: %w", err)
+	}
+	if len(actions) == 0 {
+		return nil, fmt.Errorf("at least one action is required")
+	}
+	canonical := make([]json.RawMessage, 0, len(actions))
+	for index, action := range actions {
+		normalized, err := ValidateAction(action)
+		if err != nil {
+			return nil, fmt.Errorf("actions[%d]: %w", index, err)
+		}
+		canonical = append(canonical, normalized)
+	}
+	return json.Marshal(canonical)
+}
+
 func positiveActionAmount(value any) bool {
 	number, ok := value.(json.Number)
 	if !ok {

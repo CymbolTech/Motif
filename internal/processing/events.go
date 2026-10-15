@@ -235,14 +235,54 @@ func (p *Processor) evaluateRules(ctx context.Context, eventID int64) error {
 
 const maxActionAttempts = 3
 
+type actionDefinition struct {
+	Type     string      `json:"type"`
+	Currency string      `json:"currency,omitempty"`
+	Amount   json.Number `json:"amount,omitempty"`
+	Message  string      `json:"message,omitempty"`
+}
+
+func decodeActions(raw []byte) ([]actionDefinition, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, fmt.Errorf("action definition is empty")
+	}
+	definitions := []json.RawMessage{trimmed}
+	if trimmed[0] == '[' {
+		if err := json.Unmarshal(trimmed, &definitions); err != nil {
+			return nil, err
+		}
+	}
+	if len(definitions) == 0 {
+		return nil, fmt.Errorf("at least one action is required")
+	}
+	actions := make([]actionDefinition, 0, len(definitions))
+	for index, definition := range definitions {
+		var action actionDefinition
+		if err := json.Unmarshal(definition, &action); err != nil {
+			return nil, fmt.Errorf("action %d is invalid: %w", index, err)
+		}
+		if action.Type == "" {
+			return nil, fmt.Errorf("action %d type is required", index)
+		}
+		actions = append(actions, action)
+	}
+	return actions, nil
+}
+
+func actionIdempotencyKey(eventID int64, ruleVersionID string, ordinal int) string {
+	return fmt.Sprintf("event:%d:rule:%s:action:%d", eventID, ruleVersionID, ordinal)
+}
+
 func (p *Processor) executeAction(ctx context.Context, ruleID, ruleVersionID string, eventID int64, tenantID, environmentID, externalUserID string, action []byte) error {
-	var definition map[string]any
-	decoder := json.NewDecoder(bytes.NewReader(action))
-	decoder.UseNumber()
-	if err := decoder.Decode(&definition); err != nil {
+	actions, err := decodeActions(action)
+	if err != nil {
 		return err
 	}
-	actionType, _ := definition["type"].(string)
+	actionType := actions[0].Type
+	if len(actions) > 1 {
+		actionType = "multi_action"
+	}
 	tx, err := p.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -251,7 +291,8 @@ func (p *Processor) executeAction(ctx context.Context, ruleID, ruleVersionID str
 	var executionID int64
 	var status string
 	var attempts int
-	err = tx.QueryRow(ctx, `SELECT id, status, attempts FROM rule_executions WHERE rule_id = $1 AND event_id = $2 FOR UPDATE`, ruleID, eventID).Scan(&executionID, &status, &attempts)
+	var actionOrdinal int
+	err = tx.QueryRow(ctx, `SELECT id, status, attempts, action_ordinal FROM rule_executions WHERE rule_id = $1 AND event_id = $2 FOR UPDATE`, ruleID, eventID).Scan(&executionID, &status, &attempts, &actionOrdinal)
 	if errors.Is(err, pgx.ErrNoRows) {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO rule_executions (rule_id, rule_version_id, event_id, action_type, action, status, attempts, started_at)
@@ -272,45 +313,47 @@ func (p *Processor) executeAction(ctx context.Context, ruleID, ruleVersionID str
 		return err
 	}
 
-	if actionType == "log" {
-		p.logger.Info("rule action recorded", "rule_id", ruleID, "rule_version_id", ruleVersionID, "event_id", eventID)
-		_, err = p.db.Exec(ctx, `UPDATE rule_executions SET status = 'recorded', last_error = NULL, completed_at = now() WHERE id = $1`, executionID)
+	for ordinal := actionOrdinal; ordinal < len(actions); ordinal++ {
+		definition := actions[ordinal]
+		if err = p.executeSingleAction(ctx, ruleID, ruleVersionID, eventID, tenantID, environmentID, externalUserID, ordinal, definition); err != nil {
+			_, updateErr := p.db.Exec(ctx, `UPDATE rule_executions SET status = 'failed', last_error = $2, completed_at = now() WHERE id = $1`, executionID, err.Error())
+			if updateErr != nil {
+				return updateErr
+			}
+			return nil
+		}
+		if _, err = p.db.Exec(ctx, `UPDATE rule_executions SET action_ordinal = $2, last_error = NULL WHERE id = $1`, executionID, ordinal+1); err != nil {
+			return err
+		}
+	}
+	_, err = p.db.Exec(ctx, `UPDATE rule_executions SET status = 'recorded', last_error = NULL, completed_at = now() WHERE id = $1`, executionID)
+	return err
+}
+
+func (p *Processor) executeSingleAction(ctx context.Context, ruleID, ruleVersionID string, eventID int64, tenantID, environmentID, externalUserID string, ordinal int, definition actionDefinition) error {
+	key := actionIdempotencyKey(eventID, ruleVersionID, ordinal)
+	switch definition.Type {
+	case "log":
+		p.logger.Info("rule action recorded", "rule_id", ruleID, "rule_version_id", ruleVersionID, "event_id", eventID, "action_ordinal", ordinal)
+		return nil
+	case "award_points":
+		amount, err := definition.Amount.Int64()
+		if err != nil || amount <= 0 || externalUserID == "" {
+			return fmt.Errorf("award_points requires an external user and positive integer amount")
+		}
+		_, err = p.ledger.Award(ctx, points.Scope{TenantID: tenantID, EnvironmentID: environmentID}, externalUserID, definition.Currency, amount, key, json.RawMessage(`{"source":"rule"}`))
 		return err
+	case "award_xp":
+		amount, err := definition.Amount.Int64()
+		if err != nil || amount <= 0 || externalUserID == "" {
+			return fmt.Errorf("award_xp requires an external user and positive integer amount")
+		}
+		provenance, _ := json.Marshal(map[string]any{"source": "rule", "rule_id": ruleID, "rule_version_id": ruleVersionID, "event_id": eventID, "action_ordinal": ordinal})
+		_, err = progression.AwardXP(ctx, p.db, progression.Scope{TenantID: tenantID, EnvironmentID: environmentID}, externalUserID, amount, key, provenance)
+		return err
+	default:
+		return fmt.Errorf("unsupported action type %q", definition.Type)
 	}
-	if actionType == "award_points" {
-		currency, _ := definition["currency"].(string)
-		amountValue, ok := definition["amount"].(json.Number)
-		amount, parseErr := amountValue.Int64()
-		if !ok || parseErr != nil || externalUserID == "" {
-			err = fmt.Errorf("award_points requires an external user and positive integer amount")
-		} else {
-			_, err = p.ledger.Award(ctx, points.Scope{TenantID: tenantID, EnvironmentID: environmentID}, externalUserID, currency, amount, fmt.Sprintf("event:%d:rule:%s:action:0", eventID, ruleVersionID), json.RawMessage(`{"source":"rule"}`))
-		}
-		if err == nil {
-			_, err = p.db.Exec(ctx, `UPDATE rule_executions SET status = 'recorded', last_error = NULL, completed_at = now() WHERE id = $1`, executionID)
-			return err
-		}
-	} else if actionType == "award_xp" {
-		amountValue, ok := definition["amount"].(json.Number)
-		amount, parseErr := amountValue.Int64()
-		if !ok || parseErr != nil || externalUserID == "" {
-			err = fmt.Errorf("award_xp requires an external user and positive integer amount")
-		} else {
-			provenance, _ := json.Marshal(map[string]any{"source": "rule", "rule_id": ruleID, "rule_version_id": ruleVersionID, "event_id": eventID})
-			_, err = progression.AwardXP(ctx, p.db, progression.Scope{TenantID: tenantID, EnvironmentID: environmentID}, externalUserID, amount, fmt.Sprintf("event:%d:rule:%s:action:0", eventID, ruleVersionID), provenance)
-		}
-		if err == nil {
-			_, err = p.db.Exec(ctx, `UPDATE rule_executions SET status = 'recorded', last_error = NULL, completed_at = now() WHERE id = $1`, executionID)
-			return err
-		}
-	} else {
-		err = fmt.Errorf("unsupported action type %q", actionType)
-	}
-	_, updateErr := p.db.Exec(ctx, `UPDATE rule_executions SET status = 'failed', last_error = $2, completed_at = now() WHERE id = $1`, executionID, err.Error())
-	if updateErr != nil {
-		return updateErr
-	}
-	return nil
 }
 
 func (p *Processor) pump(ctx context.Context) {

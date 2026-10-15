@@ -64,6 +64,13 @@ export type EventRecord = {
   processed_at?: string;
 };
 
+export type RuleAction = {
+  type: string;
+  currency?: string;
+  amount?: number;
+  message?: string;
+};
+
 export type Rule = {
   id: string;
   tenant_id: string;
@@ -72,7 +79,7 @@ export type Rule = {
   description: string;
   event_type: string;
   conditions: Record<string, unknown>;
-  action: Record<string, unknown>;
+  action: RuleAction | RuleAction[];
   status: 'draft' | 'published' | 'archived' | string;
   version: number;
   created_at: string;
@@ -88,7 +95,7 @@ export type RuleVersion = {
   version: number;
   event_type: string;
   conditions: Record<string, unknown>;
-  action: Record<string, unknown>;
+  action: RuleAction | RuleAction[];
   status: 'draft' | 'published' | 'archived' | string;
   created_at: string;
   published_at?: string;
@@ -134,6 +141,23 @@ export type AdminPrincipal = {
   email: string;
   role: 'super_admin' | 'tenant_admin' | string;
   tenant_ids?: string[];
+};
+
+export type TenantSignupInput = {
+  email: string;
+  password: string;
+  tenant_id: string;
+  name: string;
+  environment_id?: string;
+  environment_name?: string;
+};
+
+export type TenantSignupResponse = {
+  token: string;
+  expires_in: number;
+  admin: AdminPrincipal;
+  tenant: Tenant;
+  integration_key: string;
 };
 
 export type AdminUser = {
@@ -254,6 +278,37 @@ export type MetricDefinition = {
   active: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type ReportWidgetConfig = {
+  id: string;
+  measure: string;
+  title: string;
+  resource_id?: string;
+  event_type?: string;
+  interval?: 'day' | 'week';
+  size?: 'standard' | 'wide';
+};
+
+export type ReportDashboard = {
+  tenant_id: string;
+  environment_id: string;
+  widgets: ReportWidgetConfig[];
+  updated_at: string;
+};
+
+export type ReportQueryResponse = {
+  tenant_id: string;
+  environment_id: string;
+  measure: string;
+  resource_id?: string;
+  event_type?: string;
+  from: string;
+  to: string;
+  interval: 'day' | 'week';
+  total: number;
+  points: Array<{ at: string; value: number }>;
+  generated_at: string;
 };
 
 export type FunnelReport = {
@@ -483,6 +538,22 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
   return payload.admin;
 }
 
+export async function signupTenant(input: TenantSignupInput): Promise<TenantSignupResponse> {
+  const response = await fetch('/api/v1/admin/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...input,
+      environment_id: input.environment_id ?? 'production',
+      environment_name: input.environment_name ?? 'Production',
+    }),
+  });
+  const payload = await readResponse<TenantSignupResponse>(response);
+  adminSessionToken = payload.token;
+  window.localStorage.setItem('motif.admin.session', adminSessionToken);
+  return payload;
+}
+
 export function clearAdminSession(): void {
   adminSessionToken = '';
   if (typeof window !== 'undefined') window.localStorage.removeItem('motif.admin.session');
@@ -585,6 +656,28 @@ export async function fetchMetrics(scope: { tenant_id: string; environment_id: s
   const params = new URLSearchParams(scope);
   const response = await fetch(`/api/v1/admin/metrics?${params.toString()}`, { headers: adminHeaders() });
   return readResponse<MetricDefinition[]>(response);
+}
+
+export async function fetchReportDashboard(scope: { tenant_id: string; environment_id: string }): Promise<ReportDashboard> {
+  const params = new URLSearchParams(scope);
+  const response = await fetch(`/api/v1/admin/reports/dashboard?${params.toString()}`, { headers: adminHeaders() });
+  return readResponse<ReportDashboard>(response);
+}
+
+export async function saveReportDashboard(input: { tenant_id: string; environment_id: string; widgets: ReportWidgetConfig[] }): Promise<ReportDashboard> {
+  const response = await fetch('/api/v1/admin/reports/dashboard', { method: 'PUT', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input) });
+  return readResponse<ReportDashboard>(response);
+}
+
+export async function fetchReportQuery(input: { tenant_id: string; environment_id: string; measure: string; resource_id?: string; event_type?: string; from?: string; to?: string; interval?: 'day' | 'week' }): Promise<ReportQueryResponse> {
+  const params = new URLSearchParams({ tenant_id: input.tenant_id, environment_id: input.environment_id, measure: input.measure });
+  if (input.resource_id) params.set('resource_id', input.resource_id);
+  if (input.event_type) params.set('event_type', input.event_type);
+  if (input.from) params.set('from', input.from);
+  if (input.to) params.set('to', input.to);
+  if (input.interval) params.set('interval', input.interval);
+  const response = await fetch(`/api/v1/admin/analytics/query?${params.toString()}`, { headers: adminHeaders() });
+  return readResponse<ReportQueryResponse>(response);
 }
 
 export async function createMetric(input: { tenant_id: string; environment_id: string; id: string; name: string; description?: string; event_type: string; aggregation: 'count' | 'unique_users' }): Promise<MetricDefinition> {
@@ -749,8 +842,9 @@ export async function fetchRules(filters?: { tenant_id?: string; environment_id?
   return readResponse<Rule[]>(response);
 }
 
-export async function fetchRuleVersions(ruleId: string): Promise<RuleVersion[]> {
-  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions`, {
+export async function fetchRuleVersions(ruleId: string, scope?: { tenant_id: string; environment_id: string }): Promise<RuleVersion[]> {
+  const params = scope ? `?${new URLSearchParams(scope).toString()}` : '';
+  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions${params}`, {
     headers: adminHeaders(),
   });
   return readResponse<RuleVersion[]>(response);
@@ -763,7 +857,8 @@ export async function createRule(input: {
   description: string;
   event_type: string;
   conditions: Record<string, unknown>;
-  action: Record<string, unknown>;
+  action?: Record<string, unknown>;
+  actions?: Array<Record<string, unknown>>;
   starts_at?: string;
   ends_at?: string;
 }): Promise<Rule> {
@@ -776,13 +871,19 @@ export async function createRule(input: {
 }
 
 export async function createRuleVersion(ruleId: string, input: {
+  tenant_id: string;
+  environment_id: string;
+  name?: string;
+  description?: string;
   event_type: string;
   conditions: Record<string, unknown>;
-  action: Record<string, unknown>;
+  action?: Record<string, unknown>;
+  actions?: Array<Record<string, unknown>>;
   starts_at?: string;
   ends_at?: string;
 }): Promise<Rule> {
-  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions`, {
+  const params = new URLSearchParams({ tenant_id: input.tenant_id, environment_id: input.environment_id });
+  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions?${params.toString()}`, {
     method: 'POST',
     headers: adminHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(input),
@@ -790,16 +891,18 @@ export async function createRuleVersion(ruleId: string, input: {
   return readResponse<Rule>(response);
 }
 
-export async function publishRule(id: string): Promise<Rule> {
-  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(id)}/publish`, {
+export async function publishRule(id: string, scope?: { tenant_id: string; environment_id: string }): Promise<Rule> {
+  const params = scope ? `?${new URLSearchParams(scope).toString()}` : '';
+  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(id)}/publish${params}`, {
     method: 'POST',
     headers: adminHeaders(),
   });
   return readResponse<Rule>(response);
 }
 
-export async function publishRuleVersion(ruleId: string, version: number): Promise<Rule> {
-  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions/${version}/publish`, {
+export async function publishRuleVersion(ruleId: string, version: number, scope?: { tenant_id: string; environment_id: string }): Promise<Rule> {
+  const params = scope ? `?${new URLSearchParams(scope).toString()}` : '';
+  const response = await fetch(`/api/v1/admin/rules/${encodeURIComponent(ruleId)}/versions/${version}/publish${params}`, {
     method: 'POST',
     headers: adminHeaders(),
   });
@@ -993,6 +1096,23 @@ export const createMission = (input: { tenant_id: string; environment_id: string
 export const createAchievement = (input: { tenant_id: string; environment_id: string; name: string; description: string; event_type: string; required_count: number }) => createAdminResource<Achievement>('achievements', input);
 export const createLevel = (input: { tenant_id: string; environment_id: string; level: number; name: string; xp_threshold: number; active?: boolean }) => createAdminResource<Level>('levels', input);
 export const createReward = (input: { tenant_id: string; environment_id: string; name: string; reward_type: string; description: string; cost_currency?: string; cost_amount?: number; payload: Record<string, unknown> }) => createAdminResource<Reward>('rewards', input);
+
+async function updateAdminResource<T>(path: string, id: string, input: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`/api/v1/admin/${path}/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  });
+  return readResponse<T>(response);
+}
+
+export const updateCurrency = (id: string, input: { tenant_id: string; environment_id: string; code: string; name: string; unit_scale: number; policy: Record<string, unknown> }) => updateAdminResource<Currency>('currencies', id, input);
+export const updateMission = (id: string, input: { tenant_id: string; environment_id: string; name: string; event_type: string; target_count: number }) => updateAdminResource<Mission>('missions', id, input);
+export const updateAchievement = (id: string, input: { tenant_id: string; environment_id: string; name: string; description: string; event_type: string; required_count: number }) => updateAdminResource<Achievement>('achievements', id, input);
+export const updateLevel = (id: string, input: { tenant_id: string; environment_id: string; level: number; name: string; xp_threshold: number }) => updateAdminResource<Level>('levels', id, input);
+export const updateReward = (id: string, input: { tenant_id: string; environment_id: string; name: string; reward_type: string; description: string; cost_currency?: string; cost_amount?: number; payload: Record<string, unknown> }) => updateAdminResource<Reward>('rewards', id, input);
+export const updateGoal = (id: string, input: { tenant_id: string; environment_id: string; name: string; description?: string; event_type: string; target_count: number }) => updateAdminResource<Goal>('goals', id, input);
+export const updateCampaign = (id: string, input: { tenant_id: string; environment_id: string; goal_id?: string; name: string; description?: string; event_type: string; starts_at?: string; ends_at?: string }) => updateAdminResource<Campaign>('campaigns', id, input);
 
 export async function updateCatalogStatus(input: { tenant_id: string; environment_id: string; resource: 'currency' | 'reward' | 'mission' | 'achievement' | 'level'; id: string; active: boolean }): Promise<{ resource: string; id: string; active: boolean }> {
   const response = await fetch('/api/v1/admin/catalog-status', { method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input) });

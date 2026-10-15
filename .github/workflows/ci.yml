@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.6.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: go test ./...
+      - run: make test-integration
+      - run: go vet ./...
+      - run: go build ./apps/api ./apps/worker ./apps/migrate
+      - run: pnpm --dir apps/dashboard build
+      - run: pnpm --dir apps/marketing build
