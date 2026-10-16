@@ -249,9 +249,13 @@ func decodeActions(raw []byte) ([]actionDefinition, error) {
 	}
 	definitions := []json.RawMessage{trimmed}
 	if trimmed[0] == '[' {
-		if err := json.Unmarshal(trimmed, &definitions); err != nil {
+		// Decode into a fresh slice: unmarshalling into one whose element aliases
+		// raw would make RawMessage reuse, and overwrite, the caller's buffer.
+		var list []json.RawMessage
+		if err := json.Unmarshal(trimmed, &list); err != nil {
 			return nil, err
 		}
+		definitions = list
 	}
 	if len(definitions) == 0 {
 		return nil, fmt.Errorf("at least one action is required")

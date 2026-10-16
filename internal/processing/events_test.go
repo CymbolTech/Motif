@@ -46,3 +46,14 @@ func TestDecodeActionsPreservesNumericAmounts(t *testing.T) {
 		t.Fatalf("amount = %s", actions[0].Amount)
 	}
 }
+
+func TestDecodeActionsLeavesTheStoredDefinitionIntact(t *testing.T) {
+	raw := []byte(`[{"type": "award_points", "amount": 50, "currency": "loyalty"}]`)
+	original := string(raw)
+	if _, err := decodeActions(raw); err != nil {
+		t.Fatalf("decodeActions() error = %v", err)
+	}
+	if string(raw) != original {
+		t.Fatalf("decodeActions() rewrote its input to %s; the worker stores this buffer as the execution's action", raw)
+	}
+}
