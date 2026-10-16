@@ -204,9 +204,15 @@
 }
 
 .docs-cta .btn-signal {
-  --btn-bg: var(--on-signal);
-  --btn-fg: var(--signal);
-  --btn-line: var(--on-signal);
+  --btn-bg: var(--reward);
+  --btn-fg: var(--on-reward);
+  --btn-line: var(--reward);
+}
+
+.docs-cta .btn-signal:hover {
+  --btn-bg: var(--night);
+  --btn-fg: var(--reward);
+  --btn-line: var(--night);
 }
 
 @media (max-width: 1000px) {

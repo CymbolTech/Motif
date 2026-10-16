@@ -14,7 +14,7 @@ export function PressStart() {
         <div className="press-start-copy">
           <p>Create a workspace, register your first event, publish a rule. Your players are already waiting.</p>
           <div className="press-start-actions">
-            <ConsoleLink className="btn btn-big btn-ink">Open the console</ConsoleLink>
+            <ConsoleLink className="btn btn-big btn-reward">Open the console</ConsoleLink>
             <Link className="btn btn-big btn-line-ink" href="/docs">
               Read the docs
             </Link>

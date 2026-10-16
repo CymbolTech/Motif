@@ -10,7 +10,8 @@
   --ink-3: #8e8d86;
   --rule: var(--night-rule);
   --rule-strong: #55554f;
-  --signal-deep: #ff5a26;
+  --signal-deep: #b48cf0;
+  --signal-on-ink: #6c3baa;
   position: relative;
   z-index: 1;
   background: var(--ground);
@@ -95,7 +96,7 @@
 }
 
 .cabinet-item-meta [data-cleared] {
-  color: var(--signal);
+  color: var(--reward);
   font-weight: 700;
 }
 
@@ -151,7 +152,7 @@
 }
 
 .game-label {
-  color: var(--signal);
+  color: var(--signal-deep);
 }
 
 .game-brief-text {
@@ -221,7 +222,7 @@
 
 .check input:checked + span {
   border-color: var(--signal);
-  background: var(--signal) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231d1d1b' stroke-width='2.5'%3E%3Cpath d='M4 12.5l5 5L20 6.5'/%3E%3C/svg%3E") center / 14px no-repeat;
+  background: var(--signal) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2.5'%3E%3Cpath d='M4 12.5l5 5L20 6.5'/%3E%3C/svg%3E") center / 14px no-repeat;
 }
 
 .check input:focus-visible + span {
@@ -369,7 +370,7 @@
 }
 
 .order-stream li[data-awarded] {
-  background: color-mix(in srgb, var(--signal) 16%, transparent);
+  background: color-mix(in srgb, var(--signal) 26%, transparent);
 }
 
 .order-verdict {
@@ -380,7 +381,7 @@
 }
 
 .order-stream li[data-correct='false'] .order-verdict {
-  color: var(--signal);
+  color: var(--signal-deep);
   font-weight: 700;
 }
 
@@ -395,9 +396,9 @@
 }
 
 .game-verdict[data-win] {
-  border-color: var(--signal);
-  background: var(--signal);
-  color: var(--on-signal);
+  border-color: var(--reward);
+  background: var(--reward);
+  color: var(--on-reward);
   font-weight: 650;
 }
 
@@ -466,7 +467,7 @@
 }
 
 .counter[data-tone='bad'] .counter-value {
-  color: var(--signal);
+  color: var(--signal-deep);
 }
 
 .storm-actions {
@@ -487,7 +488,7 @@
 }
 
 .storm-naive > p {
-  color: var(--signal);
+  color: var(--signal-deep);
 }
 
 .storm-naive .storm-counters {
@@ -516,7 +517,7 @@
 }
 
 .storm-log li[data-status='accepted'] span:nth-child(2) {
-  color: var(--signal);
+  color: var(--signal-deep);
   font-weight: 700;
 }
 
@@ -676,7 +677,7 @@
 }
 
 .rewards li[data-owned] .reward-name {
-  color: var(--signal);
+  color: var(--reward);
 }
 
 .reward-desc {
@@ -692,7 +693,7 @@
 }
 
 .reward-owned {
-  color: var(--signal);
+  color: var(--reward);
   font-weight: 700;
 }
 

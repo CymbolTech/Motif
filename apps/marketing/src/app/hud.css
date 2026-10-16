@@ -532,9 +532,9 @@
 }
 
 .quests li[data-done] .quest-check {
-  border-color: var(--signal);
-  background: var(--signal);
-  color: var(--on-signal);
+  border-color: var(--reward);
+  background: var(--reward);
+  color: var(--on-reward);
 }
 
 .quest-copy {
@@ -692,8 +692,8 @@
   align-self: stretch;
   display: grid;
   place-items: center;
-  background: var(--signal);
-  color: var(--on-signal);
+  background: var(--reward);
+  color: var(--on-reward);
 }
 
 .toast-title {
@@ -709,7 +709,7 @@
 }
 
 .toast-title span {
-  color: var(--signal);
+  color: var(--reward);
 }
 
 .toast-effects {
@@ -720,8 +720,8 @@
 
 .toast-effects span {
   padding: 2px 6px;
-  background: var(--signal);
-  color: var(--on-signal);
+  background: var(--reward);
+  color: var(--on-reward);
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
@@ -740,7 +740,7 @@
 }
 
 .toast-receipt b {
-  color: var(--signal);
+  color: var(--reward);
   font-weight: 650;
 }
 
@@ -764,7 +764,7 @@
   right: 0;
   bottom: 0;
   height: 2px;
-  background: var(--signal);
+  background: var(--reward);
   transform-origin: left;
   animation: toast-timer linear forwards;
 }
@@ -780,7 +780,7 @@
 
 .toast-level .toast-badge {
   background: var(--night);
-  color: var(--signal);
+  color: var(--reward);
   font-size: 30px;
   --stretch: 70%;
 }
@@ -796,7 +796,7 @@
 }
 
 .toast-level .toast-timer {
-  background: var(--night);
+  background: var(--reward);
 }
 
 @keyframes toast-in {

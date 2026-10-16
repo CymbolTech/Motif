@@ -269,8 +269,8 @@
 
 .trigger-trace [data-tone='effect'] span {
   padding: 2px 6px;
-  background: var(--signal);
-  color: var(--on-signal);
+  background: var(--reward);
+  color: var(--on-reward);
 }
 
 .trigger-trace [data-tone='warn'] {
@@ -1208,15 +1208,17 @@ details[open] > summary .cap-toggle::after {
   gap: 10px;
 }
 
-.btn-ink {
-  --btn-bg: var(--on-signal);
-  --btn-fg: var(--signal);
-  --btn-line: var(--on-signal);
+/* The reward-green action: the one place a primary button wears the earning colour. */
+.btn-reward {
+  --btn-bg: var(--reward);
+  --btn-fg: var(--on-reward);
+  --btn-line: var(--reward);
 }
 
-.btn-ink:hover {
-  --btn-bg: transparent;
-  --btn-fg: var(--on-signal);
+.btn-reward:hover {
+  --btn-bg: var(--night);
+  --btn-fg: var(--reward);
+  --btn-line: var(--night);
 }
 
 .btn-line-ink {

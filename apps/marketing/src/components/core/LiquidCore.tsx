@@ -54,6 +54,16 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string) {
   return shader;
 }
 
+type Rgb = [number, number, number];
+
+// The core paints with the page's own tokens, so a palette change reaches the shader too.
+function tokenColor(element: Element, name: string, fallback: Rgb): Rgb {
+  const match = /^#([0-9a-f]{6})$/i.exec(getComputedStyle(element).getPropertyValue(name).trim());
+  if (!match) return fallback;
+  const value = parseInt(match[1], 16);
+  return [(value >> 16) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
+}
+
 function heartFor(achievements: number) {
   return Math.min(HEART_MAX, HEART_MIN + achievements * HEART_PER_ACHIEVEMENT);
 }
@@ -106,6 +116,8 @@ export function LiquidCore({ className, label }: { className?: string; label: st
       ripple: uniform('uRipple'),
       chrome: uniform('uChrome'),
     };
+    gl.uniform3fv(uniform('uSignal'), tokenColor(canvas, '--signal', [0.424, 0.231, 0.667]));
+    gl.uniform3fv(uniform('uSpark'), tokenColor(canvas, '--reward', [0.776, 1, 0.18]));
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const coarse = window.matchMedia('(pointer: coarse)').matches;

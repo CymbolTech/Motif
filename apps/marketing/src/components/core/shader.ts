@@ -1,8 +1,10 @@
 // Signed-distance raymarcher for the engine core: a glazed gyroid lattice
-// clipped to a sphere (the cage a 3D printer builds) around a liquid orange
-// heart that lights the cage from inside. Each processed event arrives as a
-// droplet that melts into the heart and sends a ring of light out through the
-// lattice; each achievement makes the heart larger and brighter.
+// clipped to a sphere (the cage a 3D printer builds) around a liquid
+// loyalty-purple heart that lights the cage from inside. Each processed event
+// arrives as a reward-green droplet that melts into the heart, turning purple
+// as it merges, and sends a ring of green light out through the lattice; each
+// achievement makes the heart larger and brighter. Both colours come from the
+// page's --signal and --reward tokens; green only ever appears with an event.
 
 export const VERTEX = `#version 300 es
 in vec2 aPosition;
@@ -22,11 +24,11 @@ uniform float uFlash;
 uniform vec4 uDrop;
 uniform float uRipple;
 uniform float uChrome;
+uniform vec3 uSignal;
+uniform vec3 uSpark;
 
 const vec3 GLAZE = vec3(0.86, 0.85, 0.82);
 const vec3 INK = vec3(0.114, 0.114, 0.106);
-const vec3 SIGNAL = vec3(1.0, 0.239, 0.0);
-const vec3 EMBER = vec3(1.0, 0.42, 0.12);
 const float FAR = 8.0;
 const float FREQ = 5.4;
 
@@ -111,7 +113,7 @@ float softShadow(vec3 ro, vec3 rd) {
   return clamp(res, 0.0, 1.0);
 }
 
-// A photo studio: bright top softbox, a long strip on the left, an orange gel on the right.
+// A photo studio: bright top softbox, a long strip on the left, a purple gel on the right.
 vec3 studio(vec3 r) {
   vec3 top = vec3(0.96, 0.955, 0.94);
   vec3 horizon = vec3(0.7, 0.69, 0.66);
@@ -119,7 +121,7 @@ vec3 studio(vec3 r) {
   vec3 col = r.y > 0.0 ? mix(horizon, top, smoothstep(0.0, 0.8, r.y)) : mix(horizon, floorCol, smoothstep(0.0, 0.45, -r.y));
   col += 1.4 * smoothstep(0.9, 0.985, dot(r, normalize(vec3(-0.6, 0.75, 0.35))));
   col += 0.9 * smoothstep(0.985, 0.998, dot(r, normalize(vec3(-0.95, 0.1, 0.2))));
-  col += SIGNAL * 0.9 * smoothstep(0.965, 0.995, dot(r, normalize(vec3(0.85, 0.05, 0.5))));
+  col += mix(uSignal, vec3(1.0), 0.15) * 0.9 * smoothstep(0.965, 0.995, dot(r, normalize(vec3(0.85, 0.05, 0.5))));
   return col;
 }
 
@@ -129,6 +131,11 @@ vec3 shade(vec3 p, vec3 rd, float t) {
   float cage = cageDist(q);
   float liquidD = liquidDist(p, q);
   float liquid = smoothstep(0.015, -0.015, liquidD - cage);
+  // How much of this liquid is still the droplet: green at the droplet, purple
+  // in the heart, blended across the bridge the smooth union builds between them.
+  float spark = uDrop.w > 0.0 ? clamp(0.5 + 0.5 * (heartDist(q) - dropDist(p)) / 0.22, 0.0, 1.0) : 0.0;
+  // The heart's light: a lifted purple, pushed toward white when an achievement flashes.
+  vec3 glow = mix(uSignal, vec3(1.0), 0.32 + 0.3 * uFlash);
   float radius = length(q);
   float depth = clamp((radius - 0.6) / 0.4, 0.0, 1.0);
 
@@ -145,7 +152,7 @@ vec3 shade(vec3 p, vec3 rd, float t) {
 
   // The heart is a point light at the centre of the cage.
   vec3 toHeart = -normalize(p);
-  float heartPower = (0.7 + 1.2 * (uCore - 0.3)) * (1.0 + 0.8 * uFlash);
+  float heartPower = (0.95 + 1.6 * (uCore - 0.3)) * (1.0 + 0.8 * uFlash);
   float falloff = heartPower / (1.0 + 9.0 * max(length(p) - uCore, 0.0) * max(length(p) - uCore, 0.0));
   float facing = max(dot(n, toHeart), 0.0);
   // Thin walls let the heart's light through, like a lantern.
@@ -153,26 +160,31 @@ vec3 shade(vec3 p, vec3 rd, float t) {
   float through = (1.0 - thickness) * max(dot(-n, toHeart), 0.0) * 0.35;
   // A ring of light that runs outward through the lattice when a droplet lands.
   float front = uCore + uRipple * 0.62;
-  float ripple = uRipple > 0.0 ? exp(-pow((radius - front) / 0.06, 2.0)) * (1.0 - uRipple) : 0.0;
+  float ripple = uRipple > 0.0 ? exp(-pow((radius - front) / 0.04, 2.0)) * (1.0 - uRipple) : 0.0;
+  // Additive green over grey ceramic turns olive, so the ring replaces the surface colour instead.
+  vec3 sparkLight = mix(uSpark, vec3(1.0), 0.25);
 
   // Glazed ceramic lattice.
   vec3 glaze = GLAZE * (0.18 + 0.2 * sky + 0.82 * dif * sha) * (0.45 + 0.55 * ao);
   glaze += vec3(1.0, 0.97, 0.92) * pow(max(dot(n, h), 0.0), 70.0) * 0.45 * sha;
   glaze += studio(r) * fre * 0.55 * ao;
   glaze += vec3(0.92, 0.93, 0.95) * pow(1.0 - ndv, 2.5) * max(dot(n, rim), 0.0) * 0.55;
-  glaze += EMBER * (facing + through) * falloff * (0.35 + 0.65 * ao);
-  glaze += SIGNAL * ripple * 1.2;
+  glaze += glow * (facing + through) * falloff * (0.35 + 0.65 * ao);
+  glaze = mix(glaze, sparkLight * 1.15, clamp(ripple * 1.1, 0.0, 1.0));
 
   // Chrome finish: the same lights, mirrored.
   vec3 film = 0.5 + 0.5 * cos(6.2831 * (pow(1.0 - ndv, 3.0) * 1.2 + vec3(0.0, 0.33, 0.67)) + dot(n, vec3(1.0, 0.5, 0.2)) * 2.0);
   vec3 chrome = studio(r) * mix(vec3(0.95), film, 0.18) * (0.5 + 0.5 * ao) * mix(0.65, 1.0, depth);
-  chrome += EMBER * facing * falloff * 0.8 + SIGNAL * ripple;
+  chrome += glow * facing * falloff * 0.8;
+  chrome = mix(chrome, sparkLight * 1.15, clamp(ripple * 1.1, 0.0, 1.0));
 
   // Liquid heart: saturated body, studio reflections by fresnel, a hot core.
   float heartFre = pow(1.0 - ndv, 2.0);
-  vec3 heartCol = SIGNAL * (0.62 + 0.45 * dif) * (0.8 + 0.2 * ao);
-  heartCol += EMBER * pow(ndv, 3.0) * 0.45 * (1.0 + uFlash);
-  heartCol = mix(heartCol, studio(r) * vec3(1.0, 0.58, 0.4), heartFre * 0.5);
+  vec3 body = mix(uSignal, uSpark * 0.9, spark);
+  vec3 core = mix(glow, mix(uSpark, vec3(1.0), 0.35), spark);
+  vec3 heartCol = body * (0.72 + 0.45 * dif) * (0.8 + 0.2 * ao);
+  heartCol += core * pow(ndv, 2.0) * 0.6 * (1.0 + uFlash);
+  heartCol = mix(heartCol, studio(r) * mix(vec3(1.0), core, 0.6), heartFre * 0.5);
   heartCol += pow(max(dot(n, h), 0.0), 150.0) * 1.5;
 
   vec3 lattice = mix(glaze, chrome, uChrome);

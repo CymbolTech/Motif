@@ -1,6 +1,7 @@
-/* MotifEngine public site: technical telemetry on warm concrete, one signal
-   orange that takes whole regions at the turning points, charcoal for the
-   arcade. Anybody carries every word; Martian Mono only carries data. */
+/* MotifEngine public site: technical telemetry on warm concrete. Loyalty purple
+   is the brand signal and takes whole regions at the turning points; neon
+   green is rationed to the moments a player earns something. Charcoal for the
+   arcade. Anybody carries display, Host Grotesk the reading, Martian Mono data. */
 
 :root {
   --ground: #e3e2dc;
@@ -11,9 +12,15 @@
   --ink-3: #5f5f59;
   --rule: #b5b4ad;
   --rule-strong: #8f8e88;
-  --signal: #ff3d00;
-  --signal-deep: #c93000;
-  --on-signal: #1d1d1b;
+  /* Signal: fills, regions and controls. Deep: signal as text on the current
+     ground. On-ink: signal as text on an ink fill. */
+  --signal: #6c3baa;
+  --signal-deep: #6c3baa;
+  --signal-on-ink: #b48cf0;
+  --on-signal: #ffffff;
+  /* Reward: XP, awards, unlocks. A fill on light grounds, never text there. */
+  --reward: #c6ff2e;
+  --on-reward: #1d1d1b;
   --night: #1a1a19;
   --night-hi: #242422;
   --night-ink: #ebeae4;
@@ -42,7 +49,8 @@
   --ink-3: #9a9992;
   --rule: #34342f;
   --rule-strong: #55554f;
-  --signal-deep: #ff5a26;
+  --signal-deep: #b48cf0;
+  --signal-on-ink: #6c3baa;
   color-scheme: dark;
 }
 
@@ -120,7 +128,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--signal);
+  outline: 2px solid var(--signal-deep);
   outline-offset: 3px;
 }
 
@@ -286,7 +294,7 @@ footer {
 
 .btn-signal:hover {
   --btn-bg: var(--ink);
-  --btn-fg: var(--signal);
+  --btn-fg: var(--signal-on-ink);
   --btn-line: var(--ink);
 }
 
