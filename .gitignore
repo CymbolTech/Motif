@@ -27,5 +27,7 @@ pnpm-lock.yaml
 !docs/guides/use-cases.md
 !docs/guides/rest-integration.md
 !docs/decisions/0003-rest-first-integration.md
+!docs/decisions/0005-mcp-adapter.md
+!internal/mcpserver/content/*.md
 !.github/
 !pnpm-lock.yaml

@@ -84,8 +84,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(adminauth.WithPrincipal(r.Context(), principal))
+	if principal.IsAccessToken() {
+		r = r.WithContext(audit.WithActor(r.Context(), audit.Actor{Type: adminauth.SourceAccessToken, ID: principal.TokenID, Client: clientLabel(r)}))
+	}
 	if r.URL.Path == "/v1/admin/auth/me" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, principalResponse(principal))
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/access-tokens" {
+		h.listAccessTokens(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/access-tokens" {
+		h.createAccessToken(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && isAccessTokenRevokePath(r.URL.Path) {
+		h.revokeAccessToken(w, r)
+		return
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/rules/check" {
+		h.checkRule(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && isEventTracePath(r.URL.Path) {
+		h.eventTrace(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/admin-users" {
@@ -401,14 +424,22 @@ type loginRequest struct {
 }
 
 type adminPrincipalResponse struct {
-	ID        string   `json:"id"`
-	Email     string   `json:"email"`
-	Role      string   `json:"role"`
-	TenantIDs []string `json:"tenant_ids,omitempty"`
+	ID             string   `json:"id"`
+	Email          string   `json:"email"`
+	Role           string   `json:"role"`
+	TenantIDs      []string `json:"tenant_ids,omitempty"`
+	Source         string   `json:"source,omitempty"`
+	TokenID        string   `json:"token_id,omitempty"`
+	Scopes         []string `json:"scopes,omitempty"`
+	EnvironmentIDs []string `json:"environment_ids,omitempty"`
 }
 
 func principalResponse(principal adminauth.Principal) adminPrincipalResponse {
-	return adminPrincipalResponse{ID: principal.ID, Email: principal.Email, Role: principal.Role, TenantIDs: principal.TenantIDs}
+	response := adminPrincipalResponse{ID: principal.ID, Email: principal.Email, Role: principal.Role, TenantIDs: principal.TenantIDs, Source: principal.Source}
+	if principal.IsAccessToken() {
+		response.TokenID, response.Scopes, response.EnvironmentIDs = principal.TokenID, principal.Scopes, principal.EnvironmentIDs
+	}
+	return response
 }
 
 func auditActorType(principal adminauth.Principal) string {
@@ -595,6 +626,9 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 	if principal.IsSuperAdmin() {
 		return true
 	}
+	if principal.IsAccessToken() && !accessTokenAllows(r, principal) {
+		return false
+	}
 	path := r.URL.Path
 	forbidden := []string{"/v1/admin/tenants", "/v1/admin/credentials", "/v1/admin/plans", "/v1/admin/tenant-plans", "/v1/admin/admin-users"}
 	for _, prefix := range forbidden {
@@ -618,10 +652,12 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 		// Rule version and publish actions do not carry a tenant body. They must
 		// carry the selected scope in the query string so tenant administrators
 		// can be authorized before the handler looks up the rule by id.
-		if isScopedRuleAction(r.URL.Path) {
+		if isScopedRuleAction(r.URL.Path) || isAccessTokenRevokePath(r.URL.Path) {
 			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
 		}
 		allowedCreate := map[string]bool{
+			"/v1/admin/access-tokens":        true,
+			"/v1/admin/rules/check":          true,
 			"/v1/admin/event-types":          true,
 			"/v1/admin/environments":         true,
 			"/v1/admin/events/test":          true,

@@ -102,3 +102,25 @@ func valueOr(key, fallback string) string {
 	}
 	return fallback
 }
+
+// MCPConfig configures the MCP server. It talks to the API over HTTP and needs
+// no database or broker.
+type MCPConfig struct {
+	Addr         string
+	APIURL       string
+	ConsoleURL   string
+	PublicAPIURL string
+}
+
+func LoadMCP() (MCPConfig, error) {
+	c := MCPConfig{
+		Addr:       valueOr("MCP_ADDR", "127.0.0.1:8090"),
+		APIURL:     strings.TrimRight(valueOr("MOTIF_API_URL", "http://127.0.0.1:18080"), "/"),
+		ConsoleURL: strings.TrimRight(valueOr("MOTIF_CONSOLE_URL", "http://127.0.0.1:4173"), "/"),
+	}
+	c.PublicAPIURL = strings.TrimRight(valueOr("MOTIF_PUBLIC_API_URL", c.ConsoleURL+"/api"), "/")
+	if strings.EqualFold(valueOr("MOTIF_RUNTIME_ENV", "development"), "production") && !strings.HasPrefix(c.ConsoleURL, "https://") {
+		return MCPConfig{}, fmt.Errorf("production requires an https MOTIF_CONSOLE_URL")
+	}
+	return c, nil
+}

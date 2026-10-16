@@ -23,6 +23,7 @@ The first increment provides:
 - Request IDs, configurable CORS, bounded rate limiting, structured API request logs, Prometheus metrics at `/metrics`, manual plan administration, and usage snapshots.
 - A versioned REST API and [OpenAPI contract](docs/api/openapi.yaml) for server-side integrations, with a [direct integration guide](docs/guides/rest-integration.md).
 - A public Next.js marketing and documentation application in `apps/marketing`: a gamified landing page that simulates the engine in the visitor's browser, plus the product manual at `/docs`.
+- An MCP server in `apps/mcp` that lets MCP clients configure and inspect a workspace with a scoped, revocable workspace access token: event contracts, catalog, rule checks and drafts, publishing, test events with traces, and integration snippets. See [ADR 0005](docs/decisions/0005-mcp-adapter.md).
 
 The tenant dashboard is available at `http://127.0.0.1:4173` when the Vite dev server is running. A user can create a workspace account from the sign-in screen and then manage events, automations, loyalty resources, analytics, and test events inside that membership-scoped workspace. Super Admin accounts are reserved for the future Ops service and are intentionally blocked from this dashboard.
 
@@ -68,7 +69,7 @@ make up
 make health
 ```
 
-The Docker workflow serves the console at `http://127.0.0.1:4173` and the public site and docs at `http://127.0.0.1:4174`. The dashboard container proxies `/api` and `/worker` to the private services. API liveness is also available at `http://127.0.0.1:18080/health/live` and worker readiness at `http://127.0.0.1:18081/health/ready`.
+The Docker workflow serves the console at `http://127.0.0.1:4173` and the public site and docs at `http://127.0.0.1:4174`. The dashboard container proxies `/api` and `/worker` to the private services, and `/mcp` to the MCP server (also on `http://127.0.0.1:18082/mcp`). Create a token under **Access tokens** in the console to connect an MCP client. API liveness is also available at `http://127.0.0.1:18080/health/live` and worker readiness at `http://127.0.0.1:18081/health/ready`.
 
 For a VPS deployment behind Nginx Proxy Manager, see [`deploy/README.md`](deploy/README.md).
 

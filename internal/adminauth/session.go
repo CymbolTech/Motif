@@ -35,6 +35,11 @@ type Principal struct {
 	Role      string
 	TenantIDs []string
 	Source    string
+	// Access-token principals carry the token's identity, scopes and optional
+	// environment allow-list. They are always confined to one tenant.
+	TokenID        string
+	Scopes         []string
+	EnvironmentIDs []string
 }
 
 type User struct {
@@ -259,7 +264,11 @@ func (s *Store) principal(ctx context.Context, id, email, role string) (Principa
 
 func FromRequest(ctx context.Context, store *Store, r *http.Request, bootstrapKey string) (Principal, error) {
 	if header := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(strings.ToLower(header), "bearer ") {
-		principal, err := store.Lookup(ctx, strings.TrimSpace(header[len("Bearer "):]))
+		token := strings.TrimSpace(header[len("Bearer "):])
+		if strings.HasPrefix(token, AccessTokenPrefix) {
+			return store.LookupAccessToken(ctx, token)
+		}
+		principal, err := store.Lookup(ctx, token)
 		if err == nil {
 			return principal, nil
 		}

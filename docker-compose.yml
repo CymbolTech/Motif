@@ -121,6 +121,30 @@ services:
       retries: 6
     restart: unless-stopped
 
+  mcp:
+    build:
+      context: .
+      dockerfile: deploy/docker/Go.Dockerfile
+      args:
+        APP: mcp
+    environment:
+      MOTIF_RUNTIME_ENV: ${MOTIF_RUNTIME_ENV:-development}
+      MCP_ADDR: 0.0.0.0:8090
+      MOTIF_API_URL: http://api:8080
+      MOTIF_CONSOLE_URL: ${MOTIF_CONSOLE_URL:-http://127.0.0.1:4173}
+      MOTIF_PUBLIC_API_URL: ${MOTIF_PUBLIC_API_URL:-}
+    ports:
+      - "127.0.0.1:${MCP_PORT:-18082}:8090"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
   dashboard:
     build:
       context: .
@@ -133,6 +157,8 @@ services:
       api:
         condition: service_healthy
       worker:
+        condition: service_healthy
+      mcp:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]

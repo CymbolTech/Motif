@@ -1,0 +1,11 @@
+{
+  "name": "mcp",
+  "root": "apps/mcp",
+  "projectType": "application",
+  "targets": {
+    "build": { "command": "go build -o dist/mcp ./apps/mcp", "options": { "cwd": "." }, "outputs": ["{workspaceRoot}/dist/mcp"] },
+    "test": { "command": "go test ./apps/mcp/... ./internal/mcpserver/...", "options": { "cwd": "." } },
+    "lint": { "command": "go vet ./apps/mcp/... ./internal/mcpserver/...", "options": { "cwd": "." } }
+  },
+  "tags": ["scope:backend", "type:app"]
+}

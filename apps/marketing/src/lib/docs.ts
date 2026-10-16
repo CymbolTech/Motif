@@ -191,6 +191,22 @@ reserved → delivering → fulfilled
     ],
     code: `console user     your workspace, signed in
 integration key  one environment, server-side
+access token     one workspace, scoped, revocable
 admin session    hashed, expiring, revocable`,
+  },
+  {
+    id: 'mcp',
+    title: 'Connect an MCP client',
+    body: [
+      'Coding tools that speak the Model Context Protocol, such as Claude Code, Cursor and VS Code, can configure and inspect your workspace through the MCP endpoint on the console domain. Create an access token under Access tokens in the console and choose its permissions: read, write to register contracts, catalog items, rule drafts and test events, and publish to make rule versions live.',
+      'The client can check a rule against a sample payload and name the exact condition that decided it, send a test event and trace what it awarded, and generate the backend code that sends each event. It never sees integration keys, moves points or redeems rewards; your backend keeps sending events over REST.',
+    ],
+    code: `claude mcp add --transport http motif \\
+  https://<console-domain>/mcp \\
+  --header "Authorization: Bearer motif_at_…"
+
+check_rule       explain a match before saving
+send_test_event  wait for processing, return the trace
+publish_rule     only with the publish permission`,
   },
 ] as const;

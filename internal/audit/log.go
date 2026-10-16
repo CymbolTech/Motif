@@ -22,6 +22,21 @@ type Entry struct {
 	CreatedAt     string          `json:"created_at"`
 }
 
+// Actor overrides the generic platform administrator attribution for every
+// entry recorded under a context, so writes made with an access token name the
+// token and the client that sent them.
+type Actor struct {
+	Type   string
+	ID     string
+	Client string
+}
+
+type actorKey struct{}
+
+func WithActor(ctx context.Context, actor Actor) context.Context {
+	return context.WithValue(ctx, actorKey{}, actor)
+}
+
 type Executor interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
@@ -31,11 +46,31 @@ func Record(ctx context.Context, db Executor, entry Entry) error {
 	if len(metadata) == 0 {
 		metadata = json.RawMessage(`{}`)
 	}
+	if actor, ok := ctx.Value(actorKey{}).(Actor); ok && actor.Type != "" && entry.ActorType == "platform_admin" {
+		entry.ActorType = actor.Type
+		entry.ActorID = actor.ID
+		if actor.Client != "" {
+			metadata = withClient(metadata, actor.Client)
+		}
+	}
 	_, err := db.Exec(ctx, `
 		INSERT INTO audit_log (tenant_id, environment_id, actor_type, actor_id, action, resource_type, resource_id, metadata)
 		VALUES (NULLIF($1, ''), NULLIF($2, ''), $3, NULLIF($4, ''), $5, $6, NULLIF($7, ''), $8::jsonb)`,
 		entry.TenantID, entry.EnvironmentID, entry.ActorType, entry.ActorID, entry.Action, entry.ResourceType, entry.ResourceID, metadata)
 	return err
+}
+
+func withClient(metadata json.RawMessage, client string) json.RawMessage {
+	fields := map[string]any{}
+	if err := json.Unmarshal(metadata, &fields); err != nil {
+		return metadata
+	}
+	fields["client"] = client
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return metadata
+	}
+	return encoded
 }
 
 func List(ctx context.Context, db *pgxpool.Pool, tenantID, environmentID, action string, limit int) ([]Entry, error) {

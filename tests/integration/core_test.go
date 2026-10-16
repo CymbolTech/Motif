@@ -117,7 +117,7 @@ func runMigration(t *testing.T, databaseURL, direction string) {
 
 func TestMigrationsRoundTrip(t *testing.T) {
 	db := disposableDatabase(t)
-	for version := 25; version > 0; version-- {
+	for version := 27; version > 0; version-- {
 		var current int
 		if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 			t.Fatalf("migration version before down: %v", err)
@@ -139,8 +139,8 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
-	if current != 25 {
-		t.Fatalf("migration version after reapply = %d; want 25", current)
+	if current != 27 {
+		t.Fatalf("migration version after reapply = %d; want 27", current)
 	}
 }
 
@@ -499,13 +499,18 @@ func TestConversionLotBackfill(t *testing.T) {
 	if _, err := db.pool.Exec(ctx, `DELETE FROM point_lots WHERE award_entry_id IN (SELECT id FROM point_ledger_entries WHERE provenance->>'conversion_id' = $1)`, conversion.ID); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back the measurement extension, engagement extension, and backfill so
-	// migration 23 runs again before both newer migrations are reapplied.
-	runMigration(t, db.url, "down")
-	runMigration(t, db.url, "down")
-	runMigration(t, db.url, "down")
-	runMigration(t, db.url, "up")
-	runMigration(t, db.url, "up")
+	// Roll back every migration from the backfill (23) onward so it runs again,
+	// then reapply them all.
+	for {
+		var current int
+		if err := db.pool.QueryRow(ctx, `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
+			t.Fatal(err)
+		}
+		if current < 23 {
+			break
+		}
+		runMigration(t, db.url, "down")
+	}
 	runMigration(t, db.url, "up")
 	if _, err := ledger.Spend(ctx, scope, "user-1", "bonus", 20, "spend-restored", nil); err != nil {
 		t.Fatalf("restored converted points could not be spent: %v", err)

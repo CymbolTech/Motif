@@ -106,4 +106,15 @@ An event ID identifies one business fact, such as the completion of order `123`.
 
 ## Contract and optional tooling
 
-Use [OpenAPI](../api/openapi.yaml) as the machine-readable API reference and generate a client locally if your team wants one. MotifEngine does not publish an official language SDK. A future MCP adapter may help an AI assistant configure or inspect the engine, but customer services should continue to send events over REST.
+Use [OpenAPI](../api/openapi.yaml) as the machine-readable API reference and generate a client locally if your team wants one. MotifEngine does not publish an official language SDK.
+
+## Configure from an MCP client
+
+Coding tools that speak the Model Context Protocol can configure and inspect a workspace through the MCP endpoint on the console origin, `https://<console-domain>/mcp`. Create a workspace access token under **Access tokens** in the console, choose its permissions (`read`, `write`, `publish`) and environments, and add it as a bearer header:
+
+```sh
+claude mcp add --transport http motif https://<console-domain>/mcp \
+  --header "Authorization: Bearer motif_at_…"
+```
+
+The endpoint offers tools to inspect the workspace, register event contracts, create catalog items, check and draft rules, publish with the `publish` permission, send test events and trace them, plus integration snippets and the product documentation. It never handles integration keys, point transactions or redemptions: customer services keep sending events over REST with their integration key.

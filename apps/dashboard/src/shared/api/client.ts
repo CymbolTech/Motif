@@ -749,6 +749,41 @@ export async function fetchAuditLog(filters?: { tenant_id?: string; environment_
   return readResponse<AuditEntry[]>(response);
 }
 
+export type AccessTokenScope = 'read' | 'write' | 'publish';
+
+export type AccessToken = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  hint: string;
+  scopes: AccessTokenScope[];
+  environment_ids: string[];
+  created_by: string;
+  expires_at?: string;
+  last_used_at?: string;
+  revoked_at?: string;
+  created_at: string;
+};
+
+export async function fetchAccessTokens(tenantId: string): Promise<AccessToken[]> {
+  const response = await fetch(`/api/v1/admin/access-tokens?tenant_id=${encodeURIComponent(tenantId)}`, { headers: adminHeaders() });
+  return readResponse<AccessToken[]>(response);
+}
+
+export async function createAccessToken(input: { tenant_id: string; name: string; scopes: AccessTokenScope[]; environment_ids: string[]; expires_in_days: number }): Promise<{ token: string; access_token: AccessToken }> {
+  const response = await fetch('/api/v1/admin/access-tokens', {
+    method: 'POST',
+    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(input),
+  });
+  return readResponse<{ token: string; access_token: AccessToken }>(response);
+}
+
+export async function revokeAccessToken(tenantId: string, id: string): Promise<AccessToken> {
+  const response = await fetch(`/api/v1/admin/access-tokens/${encodeURIComponent(id)}/revoke?tenant_id=${encodeURIComponent(tenantId)}`, { method: 'POST', headers: adminHeaders() });
+  return readResponse<AccessToken>(response);
+}
+
 export async function fetchCredentials(filters?: { tenant_id?: string; environment_id?: string }): Promise<Credential[]> {
   const params = new URLSearchParams();
   if (filters?.tenant_id) params.set('tenant_id', filters.tenant_id);

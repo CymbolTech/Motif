@@ -43,9 +43,9 @@ infra-up: ## Start PostgreSQL and NATS
 infra-down: ## Stop local infrastructure without deleting volumes
 	$(COMPOSE_CMD) down
 
-dev: ## Run API and worker from the host (in separate terminals)
+dev: ## Run API, worker and MCP server from the host
 	@$(MAKE) infra-up migrate-up
-	@trap 'kill 0' INT TERM EXIT; go run ./apps/api & go run ./apps/worker & wait
+	@trap 'kill 0' INT TERM EXIT; go run ./apps/api & go run ./apps/worker & MCP_ADDR=127.0.0.1:$${MCP_PORT:-18082} MOTIF_API_URL=http://$${API_ADDR:-127.0.0.1:8080} go run ./apps/mcp & wait
 
 dev-docker: ## Start the full containerized development stack
 	$(COMPOSE_CMD) up --build
@@ -73,11 +73,12 @@ compose-logs: ## Follow logs from all Docker services
 compose-status: ## Show Docker service status
 	$(COMPOSE_CMD) ps
 
-health: ## Check the public dashboard, landing page, API, and worker
+health: ## Check the public dashboard, landing page, API, worker and MCP server
 	@curl --fail --silent --show-error "http://127.0.0.1:$${DASHBOARD_PORT:-4173}/" >/dev/null
 	@curl --fail --silent --show-error "http://127.0.0.1:$${MARKETING_PORT:-4174}/" >/dev/null
 	@curl --fail --silent --show-error "http://127.0.0.1:$${API_PORT:-18080}/health/ready" >/dev/null
 	@curl --fail --silent --show-error "http://127.0.0.1:$${WORKER_PORT:-18081}/health/ready" >/dev/null
+	@curl --fail --silent --show-error "http://127.0.0.1:$${MCP_PORT:-18082}/health/ready" >/dev/null
 	@echo "MotifEngine web and service health checks passed."
 
 public-health: ## Check the console, API, landing page and docs through their public URLs
@@ -86,6 +87,7 @@ public-health: ## Check the console, API, landing page and docs through their pu
 	@curl --fail --silent --show-error "$(MOTIF_CONSOLE_URL)/api/health/ready" >/dev/null
 	@curl --fail --silent --show-error "$(MOTIF_MARKETING_URL)/" >/dev/null
 	@curl --fail --silent --show-error "$(MOTIF_MARKETING_URL)/docs" >/dev/null
+	@test "$$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "$(MOTIF_CONSOLE_URL)/mcp")" = 401 || (echo "$(MOTIF_CONSOLE_URL)/mcp should ask for an access token"; exit 1)
 	@echo "Public URLs respond: $(MOTIF_CONSOLE_URL) and $(MOTIF_MARKETING_URL)."
 
 production-env-check: ## Validate required production secrets and URLs
@@ -142,7 +144,7 @@ ci: ## Run the full local verification suite
 	go test ./...
 	$(MAKE) test-integration
 	go vet ./...
-	go build ./apps/api ./apps/worker ./apps/migrate
+	go build ./apps/api ./apps/worker ./apps/migrate ./apps/mcp
 	pnpm --dir apps/dashboard build
 	pnpm --dir apps/marketing build
 

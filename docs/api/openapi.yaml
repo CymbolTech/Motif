@@ -133,6 +133,20 @@ paths:
         '200':
           description: Ledger entries ordered newest first
           content: { application/json: { schema: { $ref: '#/components/schemas/Transactions' } } }
+    post:
+      tags: [Users]
+      security: [{ integrationKey: [] }]
+      summary: Award or spend points directly
+      description: The idempotency key makes a retried request return the original entry; reusing it with different content returns 409.
+      parameters:
+        - $ref: '#/components/parameters/ExternalUserId'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/UserTransactionRequest' } } }
+      responses:
+        '201': { description: Ledger entry recorded }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/users/{externalUserId}/achievements:
     get:
       tags: [Users]
@@ -488,6 +502,19 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/ScopedEventRequest' } } }
       responses: { '202': { description: Event accepted }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/admin/events/{externalEventId}/trace:
+    get:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Explain what one event did
+      description: Returns the receipt, the rule executions and the point and XP entries the event produced, the missions and achievements it advanced, and a fresh evaluation of every currently published rule for its event type, including the expression that decided a non-match.
+      parameters:
+        - $ref: '#/components/parameters/ExternalEventId'
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Event trace, content: { application/json: { schema: { $ref: '#/components/schemas/EventTrace' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/admin/rules:
     get:
       tags: [Administration]
@@ -511,6 +538,18 @@ paths:
         '201':
           description: Rule created
           content: { application/json: { schema: { $ref: '#/components/schemas/Rule' } } }
+  /v1/admin/rules/check:
+    post:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Check a rule without saving it
+      description: Validates the rule, checks its event contract and currencies in the environment, and evaluates an optional sample payload. Validation problems are returned with valid set to false rather than as an error status.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RuleCheckRequest' } } }
+      responses:
+        '200': { description: Check result, content: { application/json: { schema: { $ref: '#/components/schemas/RuleCheck' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/admin/rules/{ruleId}/publish:
     post:
       tags: [Administration]
@@ -887,6 +926,125 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AdminConversionRequest' } } }
       responses: { '201': { description: Conversion record }, '409': { $ref: '#/components/responses/Conflict' } }
+  /v1/admin/currencies/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Rename a currency or change its unit scale
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id, name], properties: { tenant_id: { type: string }, environment_id: { type: string }, name: { type: string }, unit_scale: { type: integer, minimum: 0, maximum: 6 } } } } } }
+      responses: { '200': { description: Currency updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/missions/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update a mission
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id] } } } }
+      responses: { '200': { description: Mission updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/achievements/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update an achievement
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AchievementRequest' } } } }
+      responses: { '200': { description: Achievement updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/levels/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update a level
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LevelRequest' } } } }
+      responses: { '200': { description: Level updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/rewards/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update a reward
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RewardRequest' } } } }
+      responses: { '200': { description: Reward updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/goals/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update a goal
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GoalRequest' } } } }
+      responses: { '200': { description: Goal updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/campaigns/{resourceId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Update a campaign
+      parameters: [{ $ref: '#/components/parameters/ResourceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CampaignRequest' } } } }
+      responses: { '200': { description: Campaign updated }, '404': { $ref: '#/components/responses/NotFound' } }
+  /v1/admin/analytics/query:
+    get:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Query one report measure as a total and a time series
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: measure, in: query, required: true, schema: { type: string } }
+        - { name: resource_id, in: query, schema: { type: string } }
+        - { name: event_type, in: query, schema: { type: string } }
+        - { name: interval, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: Defaults to seven days before to }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Defaults to now }
+      responses: { '200': { description: Report total and points } }
+  /v1/admin/reports/dashboard:
+    get:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Read the saved report dashboard layout
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses: { '200': { description: Dashboard widgets } }
+    put:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      summary: Replace the report dashboard layout
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id, widgets], properties: { tenant_id: { type: string }, environment_id: { type: string }, widgets: { type: array, items: { type: object } } } } } } }
+      responses: { '200': { description: Dashboard saved } }
+  /v1/admin/access-tokens:
+    get:
+      tags: [Administration]
+      security: [{ adminSession: [] }]
+      summary: List workspace access tokens
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Tokens without their secrets, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AccessToken' } } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminSession: [] }]
+      summary: Create a workspace access token
+      description: Requires a signed-in administrator session. The raw token is returned once.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AccessTokenRequest' } } }
+      responses:
+        '201':
+          description: Token created
+          content: { application/json: { schema: { type: object, properties: { token: { type: string, example: motif_at_… }, access_token: { $ref: '#/components/schemas/AccessToken' } } } } }
+        '403': { description: Not signed in with a session }
+  /v1/admin/access-tokens/{tokenId}/revoke:
+    post:
+      tags: [Administration]
+      security: [{ adminSession: [] }]
+      summary: Revoke a workspace access token
+      parameters:
+        - { name: tokenId, in: path, required: true, schema: { type: string } }
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Token revoked, content: { application/json: { schema: { $ref: '#/components/schemas/AccessToken' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     integrationKey:
@@ -900,12 +1058,23 @@ components:
     adminSession:
       type: http
       scheme: bearer
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: motif_at_…
+      description: >-
+        A long-lived workspace token created in the console. It is confined to one workspace and,
+        optionally, to listed environments. Scopes: read allows GET routes and read-only checks and
+        reports, write allows configuration changes and test events, publish allows publishing rule
+        versions. Tokens never reach credentials, reward providers, point transactions, redemptions,
+        token management or platform administration.
   parameters:
     ExternalUserId: { name: externalUserId, in: path, required: true, schema: { type: string } }
     ExternalEventId: { name: externalEventId, in: path, required: true, schema: { type: string } }
     RewardId: { name: rewardId, in: path, required: true, schema: { type: string } }
     RedemptionId: { name: redemptionId, in: path, required: true, schema: { type: string } }
     RuleId: { name: ruleId, in: path, required: true, schema: { type: string } }
+    ResourceId: { name: resourceId, in: path, required: true, schema: { type: string } }
     MetricId: { name: metricId, in: path, required: true, schema: { type: string } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     Offset: { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 100000, default: 0 } }
@@ -1261,6 +1430,94 @@ components:
         - type: array
           minItems: 1
           items: { type: object }
+    UserTransactionRequest:
+      type: object
+      required: [currency, amount, type, idempotency_key]
+      properties:
+        currency: { type: string }
+        amount: { type: integer, minimum: 1 }
+        type: { type: string, enum: [award, spend] }
+        idempotency_key: { type: string }
+        provenance: { type: object }
+    AccessTokenRequest:
+      type: object
+      required: [tenant_id, name, scopes]
+      properties:
+        tenant_id: { type: string }
+        name: { type: string, maxLength: 80 }
+        scopes: { type: array, items: { type: string, enum: [read, write, publish] }, description: Must include read }
+        environment_ids: { type: array, items: { type: string }, description: Empty means every environment of the workspace }
+        expires_in_days: { type: integer, minimum: 0, maximum: 365, description: 0 means no expiry }
+    AccessToken:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        name: { type: string }
+        hint: { type: string, description: Prefix and last characters for recognition }
+        scopes: { type: array, items: { type: string } }
+        environment_ids: { type: array, items: { type: string } }
+        created_by: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    RuleCheckRequest:
+      allOf:
+        - $ref: '#/components/schemas/RuleRequest'
+        - type: object
+          properties:
+            sample_payload: { type: object, description: An event payload to evaluate the conditions against }
+    ConditionExplanation:
+      type: object
+      properties:
+        path: { type: string, example: 'conditions.all[1]' }
+        operator: { type: string }
+        evaluated: { type: boolean, description: False when an earlier expression already decided the result }
+        matched: { type: boolean }
+        detail: { type: string, example: '$.total (99) >= 120 is false' }
+        error: { type: string, description: A comparison the worker cannot evaluate; processing such an event fails }
+        children: { type: array, items: { $ref: '#/components/schemas/ConditionExplanation' } }
+    RuleCheck:
+      type: object
+      properties:
+        valid: { type: boolean }
+        errors: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+        conditions: { type: object, description: Canonical conditions }
+        actions: { description: Canonical actions }
+        event_type_contract: { type: object, properties: { registered: { type: boolean }, version: { type: integer } } }
+        sample:
+          type: object
+          properties:
+            schema_valid: { type: boolean }
+            schema_error: { type: string }
+            matched: { type: boolean }
+            reason: { type: string }
+            explanation: { $ref: '#/components/schemas/ConditionExplanation' }
+            would_apply: { description: The actions that would run for this payload }
+    EventTrace:
+      type: object
+      properties:
+        event: { type: object }
+        rule_executions: { type: array, items: { type: object } }
+        point_entries: { type: array, items: { type: object } }
+        xp_entries: { type: array, items: { type: object } }
+        missions: { type: array, items: { type: object } }
+        achievements: { type: array, items: { type: object } }
+        evaluations:
+          type: array
+          items:
+            type: object
+            properties:
+              rule_id: { type: string }
+              rule_name: { type: string }
+              version: { type: integer }
+              in_window: { type: boolean }
+              matched: { type: boolean }
+              reason: { type: string }
+              explanation: { $ref: '#/components/schemas/ConditionExplanation' }
+        note: { type: string }
     RuleRequest:
       type: object
       required: [tenant_id, environment_id, name, event_type]

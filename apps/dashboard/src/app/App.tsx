@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
-import { IconAlertTriangle, IconArrowRight, IconBolt, IconBook2, IconCalendarEvent, IconChartBar, IconCheck, IconCode, IconCoin, IconCopy, IconExternalLink, IconFlag, IconGift, IconInfoCircle, IconLayoutDashboard, IconLogout, IconMenu2, IconSparkles, IconTarget, IconTrophy, IconUserCircle, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowRight, IconBolt, IconBook2, IconCalendarEvent, IconChartBar, IconCheck, IconCode, IconCoin, IconCopy, IconExternalLink, IconFlag, IconGift, IconInfoCircle, IconKey, IconLayoutDashboard, IconLogout, IconMenu2, IconSparkles, IconTarget, IconTrophy, IconUserCircle, IconX } from '@tabler/icons-react';
 import { OverviewPage } from '../pages/overview/ui/OverviewPage';
 import { LoyaltyPage } from '../pages/loyalty/ui/LoyaltyPage';
 import { ConfigurePage } from '../pages/configure/ui/ConfigurePage';
 import { CatalogPage } from '../pages/catalog/ui/CatalogPage';
 import { EngagementPage } from '../pages/engagement/ui/EngagementPage';
 import { AnalyzePage } from '../pages/analyze/ui/AnalyzePage';
+import { AccessTokensPage } from '../pages/access-tokens/ui/AccessTokensPage';
 import { ScopeProvider, useScope } from '../shared/scope/ScopeContext';
 import { TopbarSlotProvider } from '../shared/ui/PageHeader';
 import { clearAdminSession, fetchAdminPrincipal, loginAdmin, logoutAdmin, signupTenant, type AdminPrincipal, type TenantSignupResponse } from '../shared/api/client';
 
-type View = 'overview' | 'loyalty' | 'events' | 'automations' | 'currency' | 'level' | 'mission' | 'achievement' | 'reward' | 'goal' | 'campaign' | 'analyze';
+type View = 'overview' | 'loyalty' | 'events' | 'automations' | 'currency' | 'level' | 'mission' | 'achievement' | 'reward' | 'goal' | 'campaign' | 'analyze' | 'access';
 type NavItem = { label: string; icon: ComponentType<{ size?: number; stroke?: number }>; view: View };
 type NavGroup = { label: string; items: NavItem[] };
 
@@ -27,6 +28,7 @@ const viewPaths: Record<View, string> = {
   goal: '/goals',
   campaign: '/campaigns',
   analyze: '/reports',
+  access: '/access-tokens',
 };
 
 function viewFromPath(pathname: string): View {
@@ -47,6 +49,7 @@ const navGroups: NavGroup[] = [
   { label: 'Loyalty', items: [{ label: 'Currencies', icon: IconCoin, view: 'currency' }, { label: 'Levels', icon: IconTrophy, view: 'level' }, { label: 'Missions', icon: IconFlag, view: 'mission' }, { label: 'Achievements', icon: IconSparkles, view: 'achievement' }, { label: 'Rewards', icon: IconGift, view: 'reward' }] },
   { label: 'Engagement', items: [{ label: 'Goals', icon: IconTarget, view: 'goal' }, { label: 'Campaigns', icon: IconCalendarEvent, view: 'campaign' }] },
   { label: 'Analyze', items: [{ label: 'Reports', icon: IconChartBar, view: 'analyze' }] },
+  { label: 'Workspace', items: [{ label: 'Access tokens', icon: IconKey, view: 'access' }] },
 ];
 
 export function App() {
@@ -208,7 +211,7 @@ function ConsoleShell({ principal, onSignedOut }: { principal: AdminPrincipal; o
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
   const topbarSlots = useMemo(() => ({ crumbs: crumbSlot, actions: actionSlot }), [crumbSlot, actionSlot]);
   const workspaceInitial = scope?.name.trim().charAt(0).toUpperCase() || 'W';
-  const page = view === 'overview' ? <OverviewPage principal={principal} onNavigate={navigate} /> : view === 'loyalty' ? <LoyaltyPage onNavigate={navigate} /> : view === 'events' || view === 'automations' ? <ConfigurePage area={view === 'events' ? 'events' : 'rules'} initialMode={/\/new\/?$/.test(locationPath) ? 'create' : 'list'} onModeChange={navigateConfigure} /> : view === 'currency' || view === 'level' || view === 'mission' || view === 'achievement' || view === 'reward' ? <CatalogPage key={view} kind={view} /> : view === 'goal' || view === 'campaign' ? <EngagementPage key={view} kind={view} /> : view === 'analyze' ? <AnalyzePage /> : <OverviewPage principal={principal} onNavigate={navigate} />;
+  const page = view === 'overview' ? <OverviewPage principal={principal} onNavigate={navigate} /> : view === 'loyalty' ? <LoyaltyPage onNavigate={navigate} /> : view === 'events' || view === 'automations' ? <ConfigurePage area={view === 'events' ? 'events' : 'rules'} initialMode={/\/new\/?$/.test(locationPath) ? 'create' : 'list'} onModeChange={navigateConfigure} /> : view === 'currency' || view === 'level' || view === 'mission' || view === 'achievement' || view === 'reward' ? <CatalogPage key={view} kind={view} /> : view === 'goal' || view === 'campaign' ? <EngagementPage key={view} kind={view} /> : view === 'analyze' ? <AnalyzePage /> : view === 'access' ? <AccessTokensPage /> : <OverviewPage principal={principal} onNavigate={navigate} />;
 
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
