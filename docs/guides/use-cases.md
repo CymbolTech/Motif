@@ -48,6 +48,8 @@ published rule + conditions
 | Level | A cumulative XP threshold and display name | You want `Starter`, `Pro`, `Expert`, or similar progression |
 | Reward | A catalog item that can be free or cost one active currency | A user should receive an unlock or external benefit |
 | Redemption | One durable attempt to deliver a reward | You need reservation, provider status, retry, and recovery |
+| Leaderboard | A stable, named ranking of points earned in one currency or XP earned | Users should compete weekly, monthly, or in rounds you run by hand |
+| Round | One run of a leaderboard with its own start, end, and scores | You need “this week”, “last week's winners”, or a 6- or 8-day contest |
 | Goal | A measurable target tied to one event type | You want to state an outcome such as “100 completed orders” |
 | Campaign | A named event window, optionally linked to a goal | You want event and unique-user counts for a bounded activity |
 | Metric | A reusable count or unique-user definition | You want a named business measurement |
@@ -822,6 +824,48 @@ curl -X POST http://127.0.0.1:18080/v1/redemptions/<redemption_id>/retry \
 
 Operators can use **Overview → Redemptions** or `POST /v1/admin/redemptions/retry`, then inspect `GET /v1/admin/redemptions/{id}/attempts`. Never create a second redemption just because the first provider call timed out; retry the durable redemption ID.
 
+### 11.10 Leaderboards
+
+A leaderboard ranks users by what they **earn** during a round: points in one currency, or XP. Spending, expiry, conversions, and refunds of failed redemptions never change a ranking. Every award path counts — rules, `POST /v1/users/{id}/points/transactions`, and admin grants — and a replayed award never counts twice. Points earned while no round is running count nowhere.
+
+Create the board once and give it a stable key; your backend reads it by that key forever. Each board runs as a series of rounds, and its schedule decides who creates them:
+
+- **Manual:** an operator starts each round, so a round can run six days one week and eight the next.
+- **Recurring:** rounds repeat every day, week, or month (or every N of them) in the board's timezone. MotifEngine creates each round the first time it is needed, so nothing has to run at midnight. The first round starts when the board is created.
+
+A café that runs a hand-rotated weekly board and an automatic monthly board:
+
+```bash
+curl -X POST http://127.0.0.1:18080/v1/admin/leaderboards \
+  -H 'Content-Type: application/json' -H 'X-Motif-Admin-Key: <admin_key>' \
+  -d '{"tenant_id":"cafe","environment_id":"production","key":"weekly","name":"Weekly","metric":{"type":"points","currency":"coins"},"schedule":{"type":"manual"}}'
+
+curl -X POST http://127.0.0.1:18080/v1/admin/leaderboards \
+  -H 'Content-Type: application/json' -H 'X-Motif-Admin-Key: <admin_key>' \
+  -d '{"tenant_id":"cafe","environment_id":"production","key":"monthly","name":"Monthly","metric":{"type":"points","currency":"coins"},"schedule":{"type":"recurring","every":"month","timezone":"Asia/Tehran"}}'
+```
+
+To rotate the weekly board, start the next round. The running round ends at the same instant, so no award falls between rounds. `ends_at` is optional; without it the round runs until someone ends it.
+
+```bash
+curl -X POST http://127.0.0.1:18080/v1/admin/leaderboards/<leaderboard_id>/rounds \
+  -H 'Content-Type: application/json' -H 'X-Motif-Admin-Key: <admin_key>' \
+  -d '{"tenant_id":"cafe","environment_id":"production","name":"Week 44","ends_at":"2026-11-03T23:59:00+03:30"}'
+```
+
+Operators can also move a round's end (`PATCH .../rounds/{round_id}`), end it now (`POST .../rounds/{round_id}/end`), schedule a round with a future `starts_at`, and cancel a scheduled round before it starts (`POST .../rounds/{round_id}/cancel`). The console does the same under **Engagement → Leaderboards**.
+
+Your backend reads the same URL every time:
+
+```bash
+curl 'http://127.0.0.1:18080/v1/leaderboards/weekly?limit=10' \
+  -H 'X-Motif-API-Key: <integration_key>'
+```
+
+The response carries the round's name, start, end, and status with the ranked entries. When no round is running it returns the last round with `status: "ended"`, so a page between two rounds shows final standings, and `next_round` announces a scheduled round. Use `?round=previous` for the last finished round or `?round=12` for a specific one, `GET /v1/leaderboards/weekly/rounds` for history with each round's leader, and `GET /v1/users/{id}/leaderboards` for one user's rank on every active board. Ranks are unique: a higher score ranks first, then whoever reached the score first.
+
+A board's key and metric cannot change. A new schedule takes effect at the next boundary, and switching a manual board to a schedule ends its open round where the first scheduled round begins. Turning a board off stops scoring; its rounds stay readable. Deleting it (`DELETE /v1/admin/leaderboards/{id}`, or **Delete** in the console after typing the key) removes the board with every round and score, and leaves balances and XP alone. The number of boards is limited by the `max_leaderboards` plan entitlement.
+
 ## 13. Measurement and optimization scenarios
 
 ### 12.1 Reusable business metric
@@ -929,7 +973,7 @@ The same contract works with `curl`, TypeScript `fetch`, Go `net/http`, Python, 
 
 ### 14.3 Customer-facing UI
 
-MotifEngine returns state; the customer product renders it. For a loyalty screen, call profile, points, transactions, missions, achievements, progression, and reward endpoints from the customer's backend and expose only the fields the end user should see. MotifEngine does not ship a mandatory end-user widget, leaderboard, badge UI, or notification service.
+MotifEngine returns state; the customer product renders it. For a loyalty screen, call profile, points, transactions, missions, achievements, progression, leaderboard, and reward endpoints from the customer's backend and expose only the fields the end user should see. MotifEngine ranks leaderboards but does not ship a mandatory end-user widget, leaderboard page, badge UI, or notification service.
 
 ## 15. Platform administration and operations (Ops service)
 

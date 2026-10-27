@@ -41,6 +41,7 @@ var supportedKeys = map[string]struct{}{
 	"max_rules":               {},
 	"max_currencies":          {},
 	"max_rewards":             {},
+	"max_leaderboards":        {},
 }
 
 func ValidateLimits(values map[string]int64) error {

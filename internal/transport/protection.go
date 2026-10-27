@@ -90,7 +90,7 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Motif-API-Key, X-Motif-Admin-Key, X-Request-ID")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {
 			if origin == "" || permitted {

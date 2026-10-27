@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/motifengine/motifengine/internal/auth"
+	"github.com/motifengine/motifengine/internal/leaderboards"
 	"github.com/motifengine/motifengine/internal/progression"
 	appruntime "github.com/motifengine/motifengine/internal/runtime"
 )
@@ -184,6 +185,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.getProgression(w, r, scope, userID)
 	case r.Method == http.MethodGet && resource == "streaks":
 		h.getStreaks(w, r, scope, userID)
+	case r.Method == http.MethodGet && resource == "leaderboards":
+		standings, err := leaderboards.LoadUserStandings(r.Context(), h.db, leaderboards.Scope{TenantID: scope.TenantID, EnvironmentID: scope.EnvironmentID}, userID, time.Time{})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "leaderboard_lookup_failed", "leaderboards could not be read")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"user_id": userID, "leaderboards": standings})
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 	}
@@ -491,7 +499,7 @@ func (h *Handler) createTransaction(w http.ResponseWriter, r *http.Request, scop
 func parseUserPath(path string) (string, string, bool) {
 	value := strings.TrimPrefix(path, "/v1/users/")
 	parts := strings.Split(strings.TrimSuffix(value, "/"), "/")
-	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || (parts[1] != "points" && parts[1] != "profile" && parts[1] != "missions" && parts[1] != "achievements" && parts[1] != "progression" && parts[1] != "streaks") {
+	if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || (parts[1] != "points" && parts[1] != "profile" && parts[1] != "missions" && parts[1] != "achievements" && parts[1] != "progression" && parts[1] != "streaks" && parts[1] != "leaderboards") {
 		return "", "", false
 	}
 	userID, err := url.PathUnescape(parts[0])
@@ -512,6 +520,9 @@ func parseUserPath(path string) (string, string, bool) {
 	}
 	if len(parts) == 2 && parts[1] == "streaks" {
 		return userID, "streaks", true
+	}
+	if len(parts) == 2 && parts[1] == "leaderboards" {
+		return userID, "leaderboards", true
 	}
 	if len(parts) == 3 && parts[1] == "points" && parts[2] == "transactions" {
 		return userID, "transactions", true

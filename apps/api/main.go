@@ -15,6 +15,7 @@ import (
 	"github.com/motifengine/motifengine/internal/config"
 	"github.com/motifengine/motifengine/internal/events"
 	"github.com/motifengine/motifengine/internal/health"
+	"github.com/motifengine/motifengine/internal/leaderboards"
 	"github.com/motifengine/motifengine/internal/observability"
 	"github.com/motifengine/motifengine/internal/points"
 	"github.com/motifengine/motifengine/internal/rewards"
@@ -76,6 +77,9 @@ func run(logger *slog.Logger) error {
 	mux.Handle("/v1/events/", eventHandler)
 	mux.Handle("/v1/users/", points.NewHandler(db))
 	mux.Handle("/v1/points/conversions", points.NewConversionHandler(db))
+	leaderboardHandler := leaderboards.NewHandler(db)
+	mux.Handle("/v1/leaderboards", leaderboardHandler)
+	mux.Handle("/v1/leaderboards/", leaderboardHandler)
 	rewardProvider := rewards.NewProvider(rewards.ProviderConfig{
 		Kind:      cfg.RewardProvider,
 		URL:       cfg.RewardProviderURL,

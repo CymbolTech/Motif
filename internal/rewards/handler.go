@@ -224,7 +224,7 @@ func (h *Handler) redeem(ctx context.Context, scope points.Scope, rewardID strin
 		_, _ = h.db.Exec(ctx, `UPDATE reward_delivery_attempts SET status = 'failed', provider_state = $2, error_message = $3, completed_at = now() WHERE id = $1`, attemptID, providerState, err.Error())
 		_, _ = h.db.Exec(ctx, `UPDATE redemptions SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1`, redemptionID, status, err.Error())
 		if status == "failed" && currencyID != nil && costAmount != nil {
-			_, _ = h.ledger.Award(ctx, scope, request.ExternalUserID, reward.CostCurrency, reward.CostAmount, "redemption:"+redemptionID+":release", json.RawMessage(`{"source":"redemption_release"}`))
+			_, _ = h.ledger.Release(ctx, scope, request.ExternalUserID, reward.CostCurrency, reward.CostAmount, "redemption:"+redemptionID+":release", json.RawMessage(`{"source":"redemption_release"}`))
 		}
 		return Redemption{ID: redemptionID, RewardID: rewardID, ExternalUserID: request.ExternalUserID, Status: status, IdempotencyKey: request.IdempotencyKey, FailureReason: err.Error()}, err
 	}
@@ -362,7 +362,7 @@ func (h *Handler) retry(ctx context.Context, scope points.Scope, redemptionID st
 		_, _ = h.db.Exec(ctx, `UPDATE reward_delivery_attempts SET status = 'failed', provider_state = $2, error_message = $3, completed_at = now() WHERE id = $1`, attemptID, providerState, err.Error())
 		_, _ = h.db.Exec(ctx, `UPDATE redemptions SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1`, redemptionID, status, err.Error())
 		if status == "failed" && currency != nil && cost != nil {
-			_, _ = h.ledger.Award(ctx, scope, redemption.ExternalUserID, *currency, *cost, spendKey+":release", json.RawMessage(`{"source":"redemption_retry_release"}`))
+			_, _ = h.ledger.Release(ctx, scope, redemption.ExternalUserID, *currency, *cost, spendKey+":release", json.RawMessage(`{"source":"redemption_retry_release"}`))
 		}
 		redemption.Status = status
 		redemption.FailureReason = err.Error()

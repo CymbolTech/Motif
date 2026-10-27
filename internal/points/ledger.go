@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/motifengine/motifengine/internal/leaderboards"
 )
 
 var (
@@ -44,17 +45,23 @@ type Ledger struct{ db *pgxpool.Pool }
 func NewLedger(db *pgxpool.Pool) *Ledger { return &Ledger{db: db} }
 
 func (l *Ledger) Award(ctx context.Context, scope Scope, userID, currencyCode string, amount int64, idempotencyKey string, provenance json.RawMessage) (LedgerEntry, error) {
-	return l.apply(ctx, scope, userID, currencyCode, amount, "award", idempotencyKey, provenance)
+	return l.apply(ctx, scope, userID, currencyCode, amount, "award", idempotencyKey, provenance, true)
+}
+
+// Release returns points held for a redemption that did not complete. It is
+// recorded as an award but is not new earning, so leaderboards ignore it.
+func (l *Ledger) Release(ctx context.Context, scope Scope, userID, currencyCode string, amount int64, idempotencyKey string, provenance json.RawMessage) (LedgerEntry, error) {
+	return l.apply(ctx, scope, userID, currencyCode, amount, "award", idempotencyKey, provenance, false)
 }
 
 func (l *Ledger) Spend(ctx context.Context, scope Scope, userID, currencyCode string, amount int64, idempotencyKey string, provenance json.RawMessage) (LedgerEntry, error) {
 	if amount <= 0 {
 		return LedgerEntry{}, fmt.Errorf("spend amount must be positive")
 	}
-	return l.apply(ctx, scope, userID, currencyCode, -amount, "spend", idempotencyKey, provenance)
+	return l.apply(ctx, scope, userID, currencyCode, -amount, "spend", idempotencyKey, provenance, false)
 }
 
-func (l *Ledger) apply(ctx context.Context, scope Scope, userID, currencyCode string, delta int64, entryType, idempotencyKey string, provenance json.RawMessage) (LedgerEntry, error) {
+func (l *Ledger) apply(ctx context.Context, scope Scope, userID, currencyCode string, delta int64, entryType, idempotencyKey string, provenance json.RawMessage, countsAsEarning bool) (LedgerEntry, error) {
 	if userID == "" || strings.TrimSpace(currencyCode) == "" || idempotencyKey == "" || delta == 0 {
 		return LedgerEntry{}, fmt.Errorf("user, currency, amount, and idempotency_key are required")
 	}
@@ -157,6 +164,11 @@ func (l *Ledger) apply(ctx context.Context, scope Scope, userID, currencyCode st
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO point_lots (account_id, award_entry_id, original_amount, remaining_amount, expires_at) VALUES ($1, $2, $3, $3, $4)`, accountID, entry.ID, delta, expiresAt); err != nil {
 			return LedgerEntry{}, err
+		}
+		if countsAsEarning {
+			if err := leaderboards.RecordPoints(ctx, tx, scope.TenantID, scope.EnvironmentID, currencyID, userID, delta, entry.CreatedAt); err != nil {
+				return LedgerEntry{}, err
+			}
 		}
 	} else if delta < 0 {
 		if err := allocateLots(ctx, tx, accountID, entry.ID, -delta); err != nil {

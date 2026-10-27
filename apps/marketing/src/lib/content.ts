@@ -210,7 +210,7 @@ export const FAQ = [
   {
     id: 'ui',
     question: 'Does it draw badges or leaderboards in my app?',
-    answer: 'No. MotifEngine is API-first: you design the player-facing interface and read profiles, balances, missions, achievements and progression from the API.',
+    answer: 'No. MotifEngine is API-first: it keeps the rankings, and you design the player-facing interface and read profiles, balances, missions, achievements, progression and leaderboard standings from the API.',
   },
   {
     id: 'xp',

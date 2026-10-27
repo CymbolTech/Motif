@@ -117,7 +117,7 @@ func runMigration(t *testing.T, databaseURL, direction string) {
 
 func TestMigrationsRoundTrip(t *testing.T) {
 	db := disposableDatabase(t)
-	for version := 27; version > 0; version-- {
+	for version := 28; version > 0; version-- {
 		var current int
 		if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 			t.Fatalf("migration version before down: %v", err)
@@ -139,8 +139,8 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
-	if current != 27 {
-		t.Fatalf("migration version after reapply = %d; want 27", current)
+	if current != 28 {
+		t.Fatalf("migration version after reapply = %d; want 28", current)
 	}
 }
 

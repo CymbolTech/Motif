@@ -273,7 +273,7 @@ func (r *Reconciler) recordFailed(ctx context.Context, item reconciliationItem, 
 		return err
 	}
 	if result.RowsAffected() == 1 && item.Currency != nil && item.Cost != nil {
-		_, err = r.ledger.Award(ctx, points.Scope{TenantID: item.TenantID, EnvironmentID: item.EnvironmentID}, item.ExternalUserID, *item.Currency, *item.Cost, "redemption:"+item.ID+":reconciliation_release", json.RawMessage(`{"source":"redemption_reconciliation_release"}`))
+		_, err = r.ledger.Release(ctx, points.Scope{TenantID: item.TenantID, EnvironmentID: item.EnvironmentID}, item.ExternalUserID, *item.Currency, *item.Cost, "redemption:"+item.ID+":reconciliation_release", json.RawMessage(`{"source":"redemption_reconciliation_release"}`))
 	}
 	return err
 }

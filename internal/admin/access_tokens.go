@@ -229,10 +229,10 @@ func requiredScope(r *http.Request) string {
 }
 
 // requestEnvironment reads the environment a request targets: the query string
-// for reads and rule actions, the JSON body for every other write. The body is
+// for reads, deletes and rule actions, the JSON body for every other write. The body is
 // restored for the handler.
 func requestEnvironment(r *http.Request) (string, bool) {
-	if r.Method == http.MethodGet || isScopedRuleAction(r.URL.Path) {
+	if r.Method == http.MethodGet || r.Method == http.MethodDelete || isScopedRuleAction(r.URL.Path) {
 		environmentID := strings.TrimSpace(r.URL.Query().Get("environment_id"))
 		return environmentID, environmentID != ""
 	}

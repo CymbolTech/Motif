@@ -239,6 +239,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.listRuleExecutions(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/admin/leaderboards" || strings.HasPrefix(r.URL.Path, "/v1/admin/leaderboards/") {
+		h.serveLeaderboards(w, r)
+		return
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/currencies" {
 		h.createCurrency(w, r)
 		return
@@ -373,6 +377,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/user-profile" {
 		h.userProfile(w, r)
+		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/user-leaderboards" {
+		h.userLeaderboards(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/user-transactions" {
@@ -655,6 +663,12 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 		if isScopedRuleAction(r.URL.Path) || isAccessTokenRevokePath(r.URL.Path) {
 			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
 		}
+		if r.Method == http.MethodPost && isLeaderboardWritePath(path) {
+			return requestBodyTenant(r, principal)
+		}
+		if r.Method == http.MethodDelete && strings.HasPrefix(path, "/v1/admin/leaderboards/") {
+			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
+		}
 		allowedCreate := map[string]bool{
 			"/v1/admin/access-tokens":        true,
 			"/v1/admin/rules/check":          true,
@@ -665,6 +679,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 			"/v1/admin/redemptions/retry":    true,
 			"/v1/admin/rules":                true,
 			"/v1/admin/currencies":           true,
+			"/v1/admin/leaderboards":         true,
 			"/v1/admin/missions":             true,
 			"/v1/admin/goals":                true,
 			"/v1/admin/campaigns":            true,
@@ -695,7 +710,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 }
 
 func isEditableAdminResourcePath(path string) bool {
-	for _, resource := range []string{"currencies", "missions", "goals", "campaigns", "rewards", "achievements", "levels"} {
+	for _, resource := range []string{"currencies", "missions", "goals", "campaigns", "rewards", "achievements", "levels", "leaderboards"} {
 		if strings.HasPrefix(path, "/v1/admin/"+resource+"/") {
 			return true
 		}
@@ -746,9 +761,10 @@ func (h *Handler) enforceResourceLimitTx(ctx context.Context, tx pgx.Tx, tenantI
 		return fmt.Errorf("resource lock: %w", err)
 	}
 	query := map[string]string{
-		"rules":      `SELECT count(*) FROM rules WHERE tenant_id = $1 AND environment_id = $2`,
-		"currencies": `SELECT count(*) FROM currencies WHERE tenant_id = $1 AND environment_id = $2`,
-		"rewards":    `SELECT count(*) FROM rewards WHERE tenant_id = $1 AND environment_id = $2`,
+		"rules":        `SELECT count(*) FROM rules WHERE tenant_id = $1 AND environment_id = $2`,
+		"currencies":   `SELECT count(*) FROM currencies WHERE tenant_id = $1 AND environment_id = $2`,
+		"rewards":      `SELECT count(*) FROM rewards WHERE tenant_id = $1 AND environment_id = $2`,
+		"leaderboards": `SELECT count(*) FROM leaderboards WHERE tenant_id = $1 AND environment_id = $2`,
 	}[resource]
 	if query == "" {
 		return fmt.Errorf("unsupported resource limit %s", resource)
@@ -3709,10 +3725,11 @@ func (h *Handler) updateCatalogStatus(w http.ResponseWriter, r *http.Request) {
 		"mission":     `UPDATE missions SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
 		"achievement": `UPDATE achievements SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
 		"level":       `UPDATE level_definitions SET active = $4 WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
+		"leaderboard": `UPDATE leaderboards SET active = $4, updated_at = now() WHERE id = $1 AND tenant_id = $2 AND environment_id = $3`,
 	}
 	query, ok := queries[request.Resource]
 	if !ok {
-		writeError(w, http.StatusBadRequest, "invalid_catalog_resource", "resource must be currency, reward, mission, achievement, or level")
+		writeError(w, http.StatusBadRequest, "invalid_catalog_resource", "resource must be currency, reward, mission, achievement, level, or leaderboard")
 		return
 	}
 	command, err := h.db.Exec(r.Context(), query, request.ID, request.TenantID, request.EnvironmentID, request.Active)

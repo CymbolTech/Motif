@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/motifengine/motifengine/internal/leaderboards"
 )
 
 var (
@@ -108,6 +109,9 @@ func AwardXP(ctx context.Context, db *pgxpool.Pool, scope Scope, userID string, 
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (tenant_id, environment_id, external_user_id) DO UPDATE SET total_xp = user_xp.total_xp + EXCLUDED.total_xp, updated_at = now()
 		RETURNING total_xp`, scope.TenantID, scope.EnvironmentID, userID, amount).Scan(&entry.TotalXP); err != nil {
+		return XPEntry{}, err
+	}
+	if err := leaderboards.RecordXP(ctx, tx, scope.TenantID, scope.EnvironmentID, userID, amount, entry.CreatedAt); err != nil {
 		return XPEntry{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

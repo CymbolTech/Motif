@@ -9,6 +9,7 @@ tags:
   - name: Events
   - name: Users
   - name: Rewards
+  - name: Leaderboards
   - name: Administration
 paths:
   /v1/admin/auth/signup:
@@ -206,6 +207,73 @@ paths:
         - { $ref: '#/components/parameters/ExternalUserId' }
         - { name: event_type, in: query, schema: { type: string } }
       responses: { '200': { description: Streak state } }
+  /v1/users/{externalUserId}/leaderboards:
+    get:
+      tags: [Leaderboards]
+      security: [{ integrationKey: [] }]
+      summary: Read a user's place on every active leaderboard
+      description: Entry is null on a board where the user has not scored in the round shown.
+      parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
+      responses:
+        '200':
+          description: The user's standings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: string }
+                  leaderboards: { type: array, items: { $ref: '#/components/schemas/UserLeaderboardStanding' } }
+  /v1/leaderboards:
+    get:
+      tags: [Leaderboards]
+      security: [{ integrationKey: [] }]
+      summary: List active leaderboards with the round each one shows
+      responses:
+        '200':
+          description: Active leaderboards
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { leaderboards: { type: array, items: { $ref: '#/components/schemas/Leaderboard' } } }
+  /v1/leaderboards/{leaderboardKey}:
+    get:
+      tags: [Leaderboards]
+      security: [{ integrationKey: [] }]
+      summary: Read a leaderboard's ranking
+      description: >-
+        With round=current (the default) this returns the running round. When no round is running it
+        returns the last round that started, with status ended, so a page between two manual rounds
+        shows final results. Ranks are unique: a higher score ranks first, then whoever reached the
+        score first.
+      parameters:
+        - $ref: '#/components/parameters/LeaderboardKey'
+        - { name: round, in: query, schema: { type: string, default: current }, description: 'current, previous (the last round that ended), or a round number' }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 10 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+      responses:
+        '200': { description: Standings, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardStandings' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/leaderboards/{leaderboardKey}/rounds:
+    get:
+      tags: [Leaderboards]
+      security: [{ integrationKey: [] }]
+      summary: List a leaderboard's rounds, newest first, with each round's leader
+      parameters:
+        - $ref: '#/components/parameters/LeaderboardKey'
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 10 } }
+      responses:
+        '200':
+          description: Rounds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leaderboard: { $ref: '#/components/schemas/Leaderboard' }
+                  rounds: { type: array, items: { $ref: '#/components/schemas/LeaderboardRound' } }
+        '404': { $ref: '#/components/responses/NotFound' }
   /v1/points/conversions:
     post:
       tags: [Users]
@@ -889,6 +957,168 @@ paths:
           description: Provider configuration without the token
           content: { application/json: { schema: { $ref: '#/components/schemas/RewardProviderConfig' } } }
         '400': { $ref: '#/components/responses/ValidationError' }
+  /v1/admin/leaderboards:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Create a leaderboard
+      description: Limited by the max_leaderboards plan entitlement.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRequest' } } }
+      responses:
+        '201': { description: Leaderboard created, content: { application/json: { schema: { $ref: '#/components/schemas/Leaderboard' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { description: The key is taken or the plan limit is reached, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: List leaderboards with the round each one shows
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Leaderboards, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Leaderboard' } } } } }
+  /v1/admin/user-leaderboards:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Read a user's place on every active leaderboard
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: user_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The user's standings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: string }
+                  leaderboards: { type: array, items: { $ref: '#/components/schemas/UserLeaderboardStanding' } }
+  /v1/admin/leaderboards/{leaderboardId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Rename a leaderboard or change its schedule
+      description: >-
+        The key and metric cannot change. A new schedule takes effect at the next boundary: a running
+        round keeps its window, and an open manual round ends where the first scheduled round begins.
+        Use catalog-status with resource leaderboard to turn a board off or on.
+      parameters: [{ $ref: '#/components/parameters/LeaderboardId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRequest' } } }
+      responses:
+        '200': { description: Leaderboard updated, content: { application/json: { schema: { $ref: '#/components/schemas/Leaderboard' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Scheduled rounds must be cancelled before switching to a recurring schedule, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    delete:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Delete a leaderboard with its rounds and scores
+      description: Balances and XP are not touched. To stop scoring but keep history, turn the board off with catalog-status instead.
+      parameters:
+        - $ref: '#/components/parameters/LeaderboardId'
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Leaderboard deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { deleted: { type: boolean }, id: { type: string }, key: { type: string }, rounds_deleted: { type: integer } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/admin/leaderboards/{leaderboardId}/standings:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Read a leaderboard's ranking
+      parameters:
+        - $ref: '#/components/parameters/LeaderboardId'
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: round, in: query, schema: { type: string, default: current } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 10 } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 10000, default: 0 } }
+      responses:
+        '200': { description: Standings, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardStandings' } } } }
+  /v1/admin/leaderboards/{leaderboardId}/rounds:
+    get:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: List a leaderboard's rounds, newest first
+      parameters:
+        - $ref: '#/components/parameters/LeaderboardId'
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, required: true, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 10 } }
+      responses:
+        '200': { description: Rounds, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LeaderboardRound' } } } } }
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Start or schedule a round of a manual leaderboard
+      description: >-
+        With end_current (the default) the round running when the new one starts ends at that exact
+        instant, so one call rotates the board. Without it, a round that would overlap another is rejected.
+      parameters: [{ $ref: '#/components/parameters/LeaderboardId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRoundRequest' } } }
+      responses:
+        '201': { description: Round created, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRound' } } } }
+        '409': { description: The board is recurring or the round would overlap another, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}:
+    patch:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Rename a round or move its end
+      description: Send ends_at null to leave the round open until someone ends it. Only manual boards can move a round's end.
+      parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id, environment_id]
+              properties:
+                tenant_id: { type: string }
+                environment_id: { type: string }
+                name: { type: string, maxLength: 120 }
+                ends_at: { type: string, format: date-time, nullable: true }
+      responses:
+        '200': { description: Round updated, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRound' } } } }
+        '409': { description: The round ended or would overlap the next round, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}/end:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: End the running round of a manual leaderboard now
+      parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ScopeRequest' } } }
+      responses:
+        '200': { description: Round ended, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRound' } } } }
+        '409': { description: The round is not running, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}/cancel:
+    post:
+      tags: [Administration]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      summary: Cancel a round that has not started
+      parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ScopeRequest' } } }
+      responses:
+        '200': { description: Round cancelled, content: { application/json: { schema: { $ref: '#/components/schemas/LeaderboardRound' } } } }
+        '409': { description: The round has already started, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /v1/admin/catalog-status:
     post:
       tags: [Administration]
@@ -904,7 +1134,7 @@ paths:
               properties:
                 tenant_id: { type: string }
                 environment_id: { type: string }
-                resource: { type: string, enum: [currency, reward, mission, achievement, level] }
+                resource: { type: string, enum: [currency, reward, mission, achievement, level, leaderboard] }
                 id: { type: string }
                 active: { type: boolean }
       responses: { '200': { description: Catalog status updated } }
@@ -1076,6 +1306,9 @@ components:
     RuleId: { name: ruleId, in: path, required: true, schema: { type: string } }
     ResourceId: { name: resourceId, in: path, required: true, schema: { type: string } }
     MetricId: { name: metricId, in: path, required: true, schema: { type: string } }
+    LeaderboardKey: { name: leaderboardKey, in: path, required: true, schema: { type: string }, description: The board's key, such as weekly. Its id also works. }
+    LeaderboardId: { name: leaderboardId, in: path, required: true, schema: { type: string }, description: The board's id or key. }
+    RoundId: { name: roundId, in: path, required: true, schema: { type: string } }
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
     Offset: { name: offset, in: query, schema: { type: integer, minimum: 0, maximum: 100000, default: 0 } }
     Cursor: { name: cursor, in: query, schema: { type: string } }
@@ -1093,6 +1326,107 @@ components:
       description: Authentication failed
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    ScopeRequest:
+      type: object
+      required: [tenant_id, environment_id]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+    LeaderboardMetric:
+      type: object
+      required: [type]
+      description: Points earned in one currency, or XP earned. Spending, expiry, conversions, and refunds of failed redemptions never count.
+      properties:
+        type: { type: string, enum: [points, xp] }
+        currency: { type: string, description: Currency code; required for points }
+        currency_id: { type: string, readOnly: true }
+    LeaderboardSchedule:
+      type: object
+      required: [type]
+      description: >-
+        Manual boards get rounds from an operator. Recurring boards repeat every interval units of
+        every, counted on the wall clock of timezone from anchor; MotifEngine creates each round
+        the first time it is needed, and the first round starts when the board is created.
+      properties:
+        type: { type: string, enum: [manual, recurring] }
+        every: { type: string, enum: [day, week, month] }
+        interval: { type: integer, minimum: 1, maximum: 366, default: 1 }
+        anchor: { type: string, format: date-time, description: 'A period start. Defaults to the start of the current day, week, or month; monthly anchors must fall on day 1-28.' }
+        timezone: { type: string, default: UTC, example: Asia/Tehran }
+        week_start: { type: string, enum: [saturday, sunday, monday, tuesday, wednesday, thursday, friday], writeOnly: true, description: Picks the default anchor of a weekly board. }
+    LeaderboardRequest:
+      type: object
+      required: [tenant_id, environment_id, key, name, metric, schedule]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        key: { type: string, pattern: '^[a-z0-9][a-z0-9_-]{0,63}$', description: Stable name the integration API reads the board by }
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        metric: { $ref: '#/components/schemas/LeaderboardMetric' }
+        schedule: { $ref: '#/components/schemas/LeaderboardSchedule' }
+    Leaderboard:
+      type: object
+      properties:
+        id: { type: string }
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        metric: { $ref: '#/components/schemas/LeaderboardMetric' }
+        schedule: { $ref: '#/components/schemas/LeaderboardSchedule' }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        current_round: { allOf: [{ $ref: '#/components/schemas/LeaderboardRound' }], nullable: true }
+    LeaderboardRoundRequest:
+      type: object
+      required: [tenant_id, environment_id]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string }
+        name: { type: string, maxLength: 120, description: Defaults to "Round N" }
+        starts_at: { type: string, format: date-time, description: Defaults to now; a future time schedules the round }
+        ends_at: { type: string, format: date-time, description: Leave out to keep the round open until someone ends it }
+        end_current: { type: boolean, default: true }
+    LeaderboardRound:
+      type: object
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        name: { type: string }
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [scheduled, active, ended] }
+        created_by: { type: string, enum: [admin, schedule] }
+        created_at: { type: string, format: date-time }
+        participants: { type: integer, description: Present in round listings }
+        leader: { $ref: '#/components/schemas/LeaderboardEntry' }
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank: { type: integer }
+        user_id: { type: string }
+        score: { type: integer, format: int64 }
+        reached_at: { type: string, format: date-time, description: When the score last increased; earlier wins a tie }
+    LeaderboardStandings:
+      type: object
+      properties:
+        leaderboard: { $ref: '#/components/schemas/Leaderboard' }
+        round: { allOf: [{ $ref: '#/components/schemas/LeaderboardRound' }], nullable: true }
+        next_round: { allOf: [{ $ref: '#/components/schemas/LeaderboardRound' }], nullable: true }
+        participants: { type: integer }
+        entries: { type: array, items: { $ref: '#/components/schemas/LeaderboardEntry' } }
+        limit: { type: integer }
+        offset: { type: integer }
+    UserLeaderboardStanding:
+      type: object
+      properties:
+        leaderboard: { $ref: '#/components/schemas/Leaderboard' }
+        round: { allOf: [{ $ref: '#/components/schemas/LeaderboardRound' }], nullable: true }
+        participants: { type: integer }
+        entry: { allOf: [{ $ref: '#/components/schemas/LeaderboardEntry' }], nullable: true }
     Error:
       type: object
       properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } } }
