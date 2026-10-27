@@ -29,6 +29,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # The standalone output mirrors the workspace layout because tracing starts at the repository root.
 COPY --from=build /workspace/apps/marketing/.next/standalone ./
 COPY --from=build /workspace/apps/marketing/.next/static ./apps/marketing/.next/static
+# Standalone output leaves public/ out; the relief plates and grain are served from it.
+COPY --from=build /workspace/apps/marketing/public ./apps/marketing/public
 
 RUN addgroup -S app && adduser -S -G app app \
   && chown -R app:app /app
