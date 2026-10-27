@@ -29,10 +29,11 @@ product backend ── POST /v1/events (X-Motif-API-Key) ──▶ durable recei
 | Mission | Progress toward a target count of one event type | Checklists and challenges |
 | Achievement | A durable milestone after a count of one event type | Badges and recognition |
 | Reward | A `digital_unlock` catalog item, free or costing one currency | Users redeem a benefit |
+| Leaderboard | A ranking of points or XP earned per round, manual or recurring | Weekly or monthly competitions |
 | Goal, campaign | Measurement of one event type, optionally in a time window | Track an initiative; they never award anything |
 
 ## Who does what
 
 - **This MCP server** configures and inspects a workspace: event contracts, catalog, rule drafts, publishing (with permission), test events, traces and diagnostics.
 - **The product backend** sends real events and reads user state over REST with the environment's integration key. MCP is never the event path.
-- **The product's own UI** renders balances, levels, missions, achievements and rewards. MotifEngine ships no end-user widgets.
+- **The product's own UI** renders balances, levels, missions, achievements, rewards and leaderboards. MotifEngine ships no end-user widgets.

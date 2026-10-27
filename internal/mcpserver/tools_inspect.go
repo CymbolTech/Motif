@@ -50,13 +50,13 @@ type userStateInput struct {
 }
 
 var (
-	listCatalogSchema = inputSchema[listCatalogInput](map[string][]string{"kind": {"currencies", "levels", "achievements", "missions", "rewards", "goals", "campaigns"}})
+	listCatalogSchema = inputSchema[listCatalogInput](map[string][]string{"kind": {"currencies", "levels", "achievements", "missions", "rewards", "leaderboards", "goals", "campaigns"}})
 	listEventsSchema  = inputSchema[listEventsInput](map[string][]string{"status": {"accepted", "processing", "processed", "failed"}})
 )
 
 var catalogPaths = map[string]string{
 	"currencies": "/v1/admin/currencies", "levels": "/v1/admin/levels", "achievements": "/v1/admin/achievements",
-	"missions": "/v1/admin/missions", "rewards": "/v1/admin/rewards", "goals": "/v1/admin/goals", "campaigns": "/v1/admin/campaigns",
+	"missions": "/v1/admin/missions", "rewards": "/v1/admin/rewards", "leaderboards": "/v1/admin/leaderboards", "goals": "/v1/admin/goals", "campaigns": "/v1/admin/campaigns",
 }
 
 func readOnly(title string) *mcp.ToolAnnotations {
@@ -115,7 +115,7 @@ func registerInspectTools(server *mcp.Server, session *Session) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_catalog",
-		Description: "List one catalog in an environment: currencies, levels, achievements, missions, rewards, goals or campaigns, including inactive items.",
+		Description: "List one catalog in an environment: currencies, levels, achievements, missions, rewards, leaderboards (with each one's current round), goals or campaigns, including inactive items.",
 		Annotations: readOnly("List catalog"),
 		InputSchema: listCatalogSchema,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input listCatalogInput) (*mcp.CallToolResult, any, error) {
@@ -213,7 +213,7 @@ func registerInspectTools(server *mcp.Server, session *Session) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_user_state",
-		Description: "Read one user's state in an environment: balances, XP and level, mission and achievement progress, and recent ledger entries.",
+		Description: "Read one user's state in an environment: balances, XP and level, mission and achievement progress, rank on each active leaderboard, and recent ledger entries.",
 		Annotations: readOnly("Read user state"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input userStateInput) (*mcp.CallToolResult, any, error) {
 		environment, err := session.Environment(input.Environment)
@@ -231,7 +231,11 @@ func registerInspectTools(server *mcp.Server, session *Session) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, map[string]any{"environment": environment, "user_id": input.UserID, "profile": profile, "recent_transactions": transactions}, nil
+		ranks, err := session.Client.Get(ctx, "/v1/admin/user-leaderboards", query)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, map[string]any{"environment": environment, "user_id": input.UserID, "profile": profile, "leaderboards": ranks, "recent_transactions": transactions}, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -260,6 +264,8 @@ func registerInspectTools(server *mcp.Server, session *Session) {
 		}
 		return nil, map[string]any{"environment": environment, "summary": summary, "failed_rule_executions": executions, "failed_redemptions": redemptions}, nil
 	})
+
+	registerLeaderboardInspectTools(server, session)
 }
 
 func ruleFields(eventType string, conditions map[string]any, actions []map[string]any, startsAt, endsAt string) map[string]any {

@@ -97,8 +97,8 @@ type sendTestEventInput struct {
 }
 
 var (
-	updateCatalogSchema = inputSchema[updateCatalogInput](map[string][]string{"kind": {"currency", "level", "achievement", "mission", "reward"}})
-	catalogItemPaths    = map[string]string{"currency": "currencies", "level": "levels", "achievement": "achievements", "mission": "missions", "reward": "rewards"}
+	updateCatalogSchema = inputSchema[updateCatalogInput](map[string][]string{"kind": {"currency", "level", "achievement", "mission", "reward", "leaderboard"}})
+	catalogItemPaths    = map[string]string{"currency": "currencies", "level": "levels", "achievement": "achievements", "mission": "missions", "reward": "rewards", "leaderboard": "leaderboards"}
 	unsafeIDCharacters  = regexp.MustCompile(`[^a-z0-9._-]+`)
 )
 
@@ -169,7 +169,7 @@ func registerConfigureTools(server *mcp.Server, session *Session) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_catalog_item",
-		Description: "Activate or deactivate a currency, level, achievement, mission or reward, or replace its definition.",
+		Description: "Activate or deactivate a currency, level, achievement, mission, reward or leaderboard, or replace its definition. A leaderboard definition takes name, description and schedule; its key and metric cannot change, and a new schedule takes effect at the next round boundary. A deactivated leaderboard stops scoring.",
 		Annotations: writes("Update a catalog item", false, true),
 		InputSchema: updateCatalogSchema,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input updateCatalogInput) (*mcp.CallToolResult, any, error) {
@@ -269,6 +269,8 @@ func registerConfigureTools(server *mcp.Server, session *Session) {
 		}
 		return nil, result, nil
 	})
+
+	registerLeaderboardConfigureTools(server, session)
 }
 
 func registerPublishTools(server *mcp.Server, session *Session) {

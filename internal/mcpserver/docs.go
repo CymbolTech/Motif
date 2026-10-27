@@ -25,6 +25,7 @@ var docTopics = []docTopic{
 	{"rule-language", "Rule language", "Conditions, actions, versions, publishing and schedule windows"},
 	{"progression", "XP, levels, missions, achievements and streaks", "Progression features and how they relate to rules"},
 	{"loyalty", "Points, ledger and rewards", "Currencies, the ledger, refunds, conversion, rewards and redemptions"},
+	{"leaderboards", "Leaderboards", "Weekly, monthly and hand-run rankings of points or XP earned per round"},
 	{"measurement", "Measurement", "Goals, campaigns, metrics, funnels, retention, segments and experiments"},
 	{"recipes", "Recipes", "Common product needs mapped to events, rules and catalog"},
 	{"boundaries", "Boundaries", "What the engine deliberately does not do"},

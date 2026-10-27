@@ -52,9 +52,9 @@ func instructions(session *Session) string {
 	for _, environment := range session.Environments {
 		environments = append(environments, environment.ID)
 	}
-	return fmt.Sprintf(`MotifEngine is an event-driven engagement and loyalty engine. A product backend sends trusted events over REST with an integration key; published rules turn them into XP, points and log entries; missions and achievements track progress; rewards are redeemed by the product backend.
+	return fmt.Sprintf(`MotifEngine is an event-driven engagement and loyalty engine. A product backend sends trusted events over REST with an integration key; published rules turn them into XP, points and log entries; missions and achievements track progress; leaderboards rank what users earn per round; rewards are redeemed by the product backend.
 
-This server configures and inspects the %q workspace (environments: %s; permissions: %s). Start with get_workspace, and read_docs when unsure. Rules read only the current event payload. Run check_rule with realistic sample payloads before saving a draft, ask the human before publish_rule, and prove changes with send_test_event and get_event_trace. Test events award real points in their environment, so prefer a non-production environment and test user ids. Never put the integration key in client-side code.`,
+This server configures and inspects the %q workspace (environments: %s; permissions: %s). Start with get_workspace, and read_docs when unsure. Rules read only the current event payload. Run check_rule with realistic sample payloads before saving a draft, ask the human before publish_rule, and prove changes with send_test_event and get_event_trace. Test events award real points in their environment, so prefer a non-production environment and test user ids. Ask before ending a leaderboard round or deleting a leaderboard; neither can be undone. Never put the integration key in client-side code.`,
 		session.Workspace, strings.Join(environments, ", "), strings.Join(session.Scopes, ", "))
 }
 

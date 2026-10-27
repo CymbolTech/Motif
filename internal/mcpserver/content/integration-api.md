@@ -21,6 +21,15 @@ These are the routes a product backend calls with the environment's integration 
 | `GET /v1/users/{user_id}/achievements` | Achievement progress and unlocks. |
 | `GET /v1/users/{user_id}/progression` | Total XP, current level, next threshold. |
 | `GET /v1/users/{user_id}/streaks?event_type=` | Current and longest daily streak. |
+| `GET /v1/users/{user_id}/leaderboards` | The user's rank and score on every active leaderboard's current round. |
+
+## Leaderboards
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/leaderboards` | Active boards with the round each one shows. |
+| `GET /v1/leaderboards/{key}?round=current&limit=10&offset=0` | Ranked entries of the current round; `round` may also be `previous` or a round number. |
+| `GET /v1/leaderboards/{key}/rounds?limit=10` | Rounds, newest first, with each round's leader. |
 
 ## Points and rewards
 

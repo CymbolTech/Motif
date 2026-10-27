@@ -47,9 +47,9 @@ Work in this order and keep me informed:
 		return userPrompt("Design a MotifEngine program", fmt.Sprintf(`Design a MotifEngine program for this product: %s
 Goal: %s
 
-Read the recipes, rule-language and boundaries docs first, and list what already exists with list_event_types, list_catalog and list_rules. Then propose, without creating anything yet:
+Read the recipes, rule-language and boundaries docs first (and leaderboards when the goal involves competition), and list what already exists with list_event_types, list_catalog and list_rules. Then propose, without creating anything yet:
 - the event types and payload fields the backend should send (rules read only the current event),
-- currencies, levels, missions, achievements and rewards, each with the reason it exists,
+- currencies, levels, missions, achievements, rewards and leaderboards, each with the reason it exists,
 - each rule as event, conditions and actions, checked with check_rule against realistic sample payloads,
 - what to measure with goals or campaigns.
 Point out anything in the goal that the engine's boundaries do not support and how the backend should handle it instead.`, request.Params.Arguments["product"], request.Params.Arguments["goal"])), nil

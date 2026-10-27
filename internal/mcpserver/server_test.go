@@ -58,6 +58,10 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		write(map[string]any{"tenant_id": "acme", "events": 3})
 	case "/v1/admin/event-types":
 		write([]map[string]any{{"tenant_id": "acme", "name": "order.completed", "schema": map[string]any{"type": "object", "properties": map[string]any{"order_id": map[string]any{"type": "string"}, "total": map[string]any{"type": "number", "minimum": 0}, "payment_status": map[string]any{"type": "string", "enum": []string{"paid", "pending"}}}}}})
+	case "/v1/admin/leaderboards/weekly/standings":
+		write(map[string]any{"round": map[string]any{"id": "round_7", "status": "active"}, "entries": []any{}})
+	case "/v1/admin/leaderboards/weekly/rounds":
+		write([]map[string]any{{"id": "round_8", "status": "scheduled"}, {"id": "round_7", "status": "active"}})
 	case "/v1/admin/rules/check":
 		write(map[string]any{"valid": true, "errors": []string{}, "sample": map[string]any{"matched": false, "reason": "conditions.all[1]: $.total (99) >= 120 is false"}})
 	default:

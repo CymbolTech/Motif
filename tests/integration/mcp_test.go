@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -16,10 +17,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/motifengine/motifengine/internal/admin"
 	"github.com/motifengine/motifengine/internal/mcpserver"
+	"github.com/motifengine/motifengine/internal/points"
 	"github.com/motifengine/motifengine/internal/processing"
 	"github.com/nats-io/nats.go"
 )
@@ -286,5 +289,109 @@ func TestMCPConfiguresTestsAndExplainsAWorkspace(t *testing.T) {
 	}
 	if status, _ := adminJSON(t, api, http.MethodGet, "/v1/admin/auth/me", readerToken, nil); status != http.StatusUnauthorized {
 		t.Fatalf("revoked token = %d, want 401", status)
+	}
+}
+
+// An MCP client runs the café flow: a manual weekly board rotated by hand,
+// read back by key, and the ranks visible in a user's state.
+func TestMCPRunsALeaderboard(t *testing.T) {
+	db := disposableDatabase(t)
+	ctx := context.Background()
+	mux := http.NewServeMux()
+	mux.Handle("/v1/admin/", admin.NewHandler(db.pool, "mcp-integration-admin-key"))
+	api := httptest.NewServer(mux)
+	t.Cleanup(api.Close)
+	mcpServer := httptest.NewServer(mcpserver.NewHTTPHandler(mcpserver.Options{APIURL: api.URL, ConsoleURL: "https://console.example", PublicAPIURL: "https://console.example/api", Version: "integration"}))
+	t.Cleanup(mcpServer.Close)
+
+	status, signup := adminJSON(t, api, http.MethodPost, "/v1/admin/auth/signup", "", map[string]any{
+		"email": "owner@cafe.example", "password": "a-long-integration-password", "tenant_id": "cafe", "name": "Cafe", "environment_id": "sandbox", "environment_name": "Sandbox",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("signup = %d %v", status, signup)
+	}
+	createToken := func(scopes []string) string {
+		t.Helper()
+		status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-tokens", signup["token"].(string), map[string]any{"tenant_id": "cafe", "name": strings.Join(scopes, "-"), "scopes": scopes, "expires_in_days": 30})
+		if status != http.StatusCreated {
+			t.Fatalf("create token = %d %v", status, body)
+		}
+		return body["token"].(string)
+	}
+	builder, err := connectMCP(t, mcpServer.URL, createToken([]string{"read", "write"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustCall := func(tool string, arguments map[string]any) map[string]any {
+		t.Helper()
+		result, text, failed := callTool(t, builder, tool, arguments)
+		if failed {
+			t.Fatalf("%s failed: %s", tool, text)
+		}
+		return result
+	}
+	mustCall("create_currency", map[string]any{"code": "coins", "name": "Coins"})
+	mustCall("create_leaderboard", map[string]any{"key": "weekly", "name": "Weekly", "rank": "points", "currency": "coins", "rounds": "manual"})
+	mustCall("create_leaderboard", map[string]any{"key": "monthly", "name": "Monthly", "rank": "points", "currency": "coins", "rounds": "recurring", "every": "month", "timezone": "Asia/Tehran"})
+	if _, text, failed := callTool(t, builder, "end_leaderboard_round", map[string]any{"leaderboard": "weekly"}); !failed || !strings.Contains(text, "start_leaderboard_round") {
+		t.Fatalf("ending with no round running = %s, want a hint to start one", text)
+	}
+	mustCall("start_leaderboard_round", map[string]any{"leaderboard": "weekly", "name": "Week 44", "ends_at": time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)})
+
+	ledger := points.NewLedger(db.pool)
+	scope := points.Scope{TenantID: "cafe", EnvironmentID: "sandbox"}
+	for index, award := range []struct {
+		user   string
+		amount int64
+	}{{"sara", 40}, {"ali", 90}} {
+		if _, err := ledger.Award(ctx, scope, award.user, "coins", award.amount, fmt.Sprintf("cafe-%d", index), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	board := mustCall("get_leaderboard", map[string]any{"leaderboard": "weekly"})
+	standings := board["standings"].(map[string]any)
+	entries := standings["entries"].([]any)
+	if standings["round"].(map[string]any)["name"] != "Week 44" || len(entries) != 2 || entries[0].(map[string]any)["user_id"] != "ali" {
+		t.Fatalf("get_leaderboard = %v", standings)
+	}
+	if monthly := mustCall("get_leaderboard", map[string]any{"leaderboard": "monthly"})["standings"].(map[string]any); len(monthly["entries"].([]any)) != 2 {
+		t.Fatalf("the recurring board should have counted both awards: %v", monthly)
+	}
+	_, text, _ := callTool(t, builder, "get_user_state", map[string]any{"user_id": "sara"})
+	if !strings.Contains(text, `"rank":2`) {
+		t.Fatalf("get_user_state should include sara's rank 2: %s", text)
+	}
+
+	mustCall("update_leaderboard_round", map[string]any{"leaderboard": "weekly", "name": "Week 44 (long)", "open_ended": true})
+	if round := mustCall("get_leaderboard", map[string]any{"leaderboard": "weekly"})["standings"].(map[string]any)["round"].(map[string]any); round["ends_at"] != nil || round["name"] != "Week 44 (long)" {
+		t.Fatalf("round after update = %v", round)
+	}
+	if ended := mustCall("end_leaderboard_round", map[string]any{"leaderboard": "weekly"}); ended["action"] != "ended" {
+		t.Fatalf("end_leaderboard_round = %v", ended)
+	}
+	if round := mustCall("get_leaderboard", map[string]any{"leaderboard": "weekly"})["standings"].(map[string]any)["round"].(map[string]any); round["status"] != "ended" {
+		t.Fatalf("the board should show the ended round's final standings: %v", round)
+	}
+
+	catalog := mustCall("list_catalog", map[string]any{"kind": "leaderboards"})
+	var monthlyID string
+	for _, item := range catalog["items"].([]any) {
+		if board := item.(map[string]any); board["key"] == "monthly" {
+			monthlyID = board["id"].(string)
+		}
+	}
+	mustCall("update_catalog_item", map[string]any{"kind": "leaderboard", "id": monthlyID, "active": false})
+	var active bool
+	if err := db.pool.QueryRow(ctx, `SELECT active FROM leaderboards WHERE id = $1`, monthlyID).Scan(&active); err != nil || active {
+		t.Fatalf("monthly board active = %v (err %v), want deactivated", active, err)
+	}
+
+	reader, err := connectMCP(t, mcpServer.URL, createToken([]string{"read"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := listToolNames(t, reader); !slices.Contains(names, "get_leaderboard") || slices.Contains(names, "start_leaderboard_round") {
+		t.Fatalf("reader tools = %v", names)
 	}
 }
