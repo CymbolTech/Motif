@@ -1,0 +1,42 @@
+<!doctype html>
+<!-- Draws the relief plates and the grain tile, printing each as a data URL. Regenerate from apps/marketing:
+  google-chrome --headless=new --disable-gpu --virtual-time-budget=60000 --dump-dom "file://$PWD/scripts/relief/relief.html" | python3 scripts/relief/extract.py public/relief -->
+<html><body>
+<script>
+// Monochrome gyroid relief: a heightfield sliced through a gyroid, lit from the upper left.
+function gyroid(x,y,z){return Math.sin(x)*Math.cos(y)+Math.sin(y)*Math.cos(z)+Math.sin(z)*Math.cos(x)}
+function relief(name,W,H,seed,light,scale){
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const ctx=c.getContext('2d'),img=ctx.createImageData(W,H),d=img.data;
+  const k=W/1600, sc=(0.014+seed*0.001)/k*scale, ox=seed*3.1, oy=seed*1.7;
+  const h=(x,y)=>{const u=x*sc+ox,v=y*sc*1.15+oy;const z=Math.sin(u*0.35+v*0.2)*1.6+seed;
+    const w=0.55*Math.sin(v*0.5+u*0.15);return Math.tanh(1.6*gyroid(u+w,v,z))};
+  const L=[-0.55,-0.6,0.58];
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const hx=h(x+1,y)-h(x-1,y),hy=h(x,y+1)-h(x,y-1);
+    let nx=-hx*4.6/k/scale,ny=-hy*4.6/k/scale,nz=1;const n=Math.hypot(nx,ny,nz);nx/=n;ny/=n;nz/=n;
+    const lam=Math.max(0,nx*L[0]+ny*L[1]+nz*L[2]);
+    const spec=Math.pow(Math.max(0,nz*0.9-nx*0.3-ny*0.3),24)*0.35;
+    const vig=1-0.55*Math.pow(Math.hypot((x/W-.5)*1.2,(y/H-.5)*1.5),1.6);
+    let v=(0.08+lam*0.62*light+spec)*vig;
+    v=Math.max(0,Math.min(1,v))*255;
+    const i=(y*W+x)*4;d[i]=v;d[i+1]=v;d[i+2]=Math.min(255,v+2);d[i+3]=255;}
+  ctx.putImageData(img,0,0);
+  out(name,c.toDataURL('image/webp',0.8));
+}
+function grain(){
+  const S=192,c=document.createElement('canvas');c.width=c.height=S;const ctx=c.getContext('2d'),img=ctx.createImageData(S,S),d=img.data;
+  let s=12345;const r=()=>{s=(s*16807)%2147483647;return s/2147483647};
+  for(let i=0;i<S*S;i++){const v=r()*255;d[i*4]=d[i*4+1]=d[i*4+2]=v;d[i*4+3]=255}
+  ctx.putImageData(img,0,0);out('grain.png',c.toDataURL('image/png'));
+}
+function out(name,url){const p=document.createElement('pre');p.dataset.name=name;p.textContent=url;document.body.appendChild(p)}
+relief('hero.webp',1200,800,1,0.85,1);
+relief('track.webp',1800,640,2,0.7,1);
+relief('decide.webp',1800,680,3,0.75,1);
+relief('progress.webp',1800,680,4,0.8,1);
+relief('reward.webp',1800,720,5,0.7,1);
+relief('agents.webp',1800,620,6,0.65,1);
+grain();
+</script>
+</body></html>

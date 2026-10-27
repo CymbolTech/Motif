@@ -173,6 +173,7 @@ services:
       dockerfile: deploy/docker/Marketing.Dockerfile
       args:
         NEXT_PUBLIC_DASHBOARD_URL: ${MOTIF_CONSOLE_URL:-http://127.0.0.1:4173}
+        NEXT_PUBLIC_SITE_URL: ${MOTIF_MARKETING_URL:-http://127.0.0.1:4174}
     ports:
       - "${PUBLIC_BIND:-127.0.0.1}:${MARKETING_PORT:-4174}:3000"
     healthcheck:

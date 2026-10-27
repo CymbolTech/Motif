@@ -1,56 +1,95 @@
 import type { Metadata, Viewport } from 'next';
+import localFont from 'next/font/local';
 import type { ReactNode } from 'react';
-import '@fontsource-variable/anybody/standard.css';
-import '@fontsource-variable/martian-mono/standard.css';
-import '@fontsource-variable/host-grotesk/index.css';
+import { Motion, MOTION_PREFLIGHT } from '@/components/Motion';
+import { COMPANY, DESCRIPTION, KEYWORDS, SITE_NAME, SITE_URL, TITLE } from '@/lib/site';
+import 'lenis/dist/lenis.css';
 import './globals.css';
-import './hud.css';
-import { GameRuntime } from '@/components/hud/GameRuntime';
-import { HudBar } from '@/components/hud/HudBar';
+
+const sans = localFont({
+  src: '../../node_modules/@fontsource-variable/host-grotesk/files/host-grotesk-latin-wght-normal.woff2',
+  weight: '300 800',
+  variable: '--font-sans',
+  display: 'swap',
+  fallback: ['ui-sans-serif', 'system-ui', 'sans-serif'],
+});
+
+const mono = localFont({
+  src: '../../node_modules/@fontsource-variable/martian-mono/files/martian-mono-latin-standard-normal.woff2',
+  weight: '100 800',
+  variable: '--font-mono',
+  display: 'swap',
+  preload: false,
+  fallback: ['ui-monospace', 'SFMono-Regular', 'monospace'],
+});
 
 export const metadata: Metadata = {
-  title: 'MotifEngine — Your product already has players',
-  description:
-    'MotifEngine is an open-source engine for XP, achievements, missions, point currencies and rewards. Your product sends events, your team publishes rules, every reward is ledgered.',
+  metadataBase: new URL(SITE_URL),
+  title: { default: TITLE, template: `%s · ${SITE_NAME}` },
+  description: DESCRIPTION,
+  keywords: KEYWORDS,
+  applicationName: SITE_NAME,
+  authors: [{ name: COMPANY }],
+  creator: COMPANY,
+  publisher: COMPANY,
+  category: 'technology',
+  alternates: { canonical: '/' },
   openGraph: {
-    title: 'MotifEngine — Your product already has players',
-    description: 'Events in, published rules in the middle, ledgered rewards out. An open-source engagement and loyalty engine.',
     type: 'website',
+    siteName: SITE_NAME,
+    title: TITLE,
+    description: DESCRIPTION,
+    url: '/',
+    locale: 'en_US',
   },
+  twitter: {
+    card: 'summary_large_image',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 } },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#e3e2dc',
+  themeColor: '#0a0a0b',
+  colorScheme: 'dark',
   width: 'device-width',
   initialScale: 1,
 };
 
-// Runs before first paint so a returning visitor never sees the boot screen
-// flash, and a visitor who redeemed Night shift never sees the day theme flash.
-const preflight = `try{var d=document.documentElement;if(sessionStorage.getItem('motifengine.booted')||matchMedia('(prefers-reduced-motion: reduce)').matches)d.dataset.booted='1';var r=JSON.parse(localStorage.getItem('motifengine.run.v1')||'null');if(r&&r.unlocks&&r.unlocks['night-shift']&&localStorage.getItem('motifengine.theme')!=='day')d.dataset.theme='night';}catch(e){}`;
+const ORGANIZATION = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      name: COMPANY,
+      url: SITE_URL,
+      logo: `${SITE_URL}/icon.svg`,
+      brand: { '@type': 'Brand', name: SITE_NAME },
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      name: SITE_NAME,
+      url: SITE_URL,
+      description: DESCRIPTION,
+      inLanguage: 'en',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+  ],
+};
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: preflight }} />
+        <script dangerouslySetInnerHTML={{ __html: MOTION_PREFLIGHT }} />
       </head>
       <body>
-        <a className="skip" href="#main">
-          Skip to content
-        </a>
-        <div className="guides" aria-hidden="true">
-          <div className="frame">
-            <div className="grid">
-              {Array.from({ length: 12 }, (_, index) => (
-                <span key={index} />
-              ))}
-            </div>
-          </div>
-        </div>
-        <HudBar />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION) }} />
         {children}
-        <GameRuntime />
+        <Motion />
       </body>
     </html>
   );

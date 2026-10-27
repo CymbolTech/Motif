@@ -13,6 +13,9 @@ FROM dependencies AS build
 COPY apps/marketing apps/marketing
 ARG NEXT_PUBLIC_DASHBOARD_URL=http://127.0.0.1:4173
 ENV NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL}
+# Canonical public origin for metadata, the sitemap and robots.txt.
+ARG NEXT_PUBLIC_SITE_URL=
+ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --dir apps/marketing build
 

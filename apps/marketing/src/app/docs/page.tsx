@@ -1,14 +1,26 @@
 import type { Metadata } from 'next';
-import { Footer } from '@/components/sections/Footer';
-import { DocsVisit } from '@/components/sections/DocsVisit';
-import { ConsoleLink } from '@/components/ui/ConsoleLink';
+import { CodeBlock } from '@/components/CodeBlock';
+import { Chevron } from '@/components/Icons';
+import { SiteFooter, SiteHeader } from '@/components/SiteChrome';
 import { CONCEPTS, GUIDES, OPERATORS, QUICKSTART } from '@/lib/docs';
-import '../landing.css';
+import { DASHBOARD_URL, SITE_NAME, SITE_URL } from '@/lib/site';
 import './docs.css';
 
+const DESCRIPTION =
+  'Add gamification to your product with Motif: quickstart, rule language and guides for events, XP and levels, points, rewards and leaderboards.';
+
 export const metadata: Metadata = {
-  title: 'The manual — MotifEngine',
-  description: 'Quickstart, concepts, rule language and guides for MotifEngine events, rules, progression, points, rewards and access.',
+  title: 'Docs: Gamification API Quickstart and Guides',
+  description: DESCRIPTION,
+  alternates: { canonical: '/docs' },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    locale: 'en_US',
+    title: `Docs: Gamification API Quickstart and Guides · ${SITE_NAME}`,
+    description: DESCRIPTION,
+    url: '/docs',
+  },
 };
 
 const INDEX = [
@@ -18,53 +30,88 @@ const INDEX = [
   ...GUIDES.map((guide) => ({ href: `#${guide.id}`, label: guide.title })),
 ];
 
+const STRUCTURED_DATA = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'TechArticle',
+      headline: 'Motif documentation',
+      description: DESCRIPTION,
+      url: `${SITE_URL}/docs`,
+      inLanguage: 'en',
+      about: { '@id': `${SITE_URL}/#software` },
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+    {
+      '@type': 'HowTo',
+      name: 'Add gamification to your product with Motif',
+      step: QUICKSTART.map((step, index) => ({ '@type': 'HowToStep', position: index + 1, name: step.title, text: step.body })),
+    },
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: SITE_NAME, item: SITE_URL },
+        { '@type': 'ListItem', position: 2, name: 'Docs', item: `${SITE_URL}/docs` },
+      ],
+    },
+  ],
+};
+
 export default function DocsPage() {
   return (
     <>
-      <main id="main" className="docs">
-        <header className="docs-hero frame">
-          <h1 className="docs-title display">The manual.</h1>
-          <p className="docs-lede">
-            How MotifEngine behaves today: the eight-step path from an empty workspace to a reward, the concepts that keep value honest, and the API shapes behind each one.
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }} />
+      <SiteHeader />
+      <main id="main" className="docs wrap">
+        <header className="docs-hero">
+          <h1 className="h1">
+            Motif docs
+            <br />
+            <span>Add gamification and loyalty to your product</span>
+          </h1>
+          <p className="lead">
+            The path from an empty workspace to a reward in eight steps, the concepts that keep value honest, and the API shapes behind each one. REST, described by an OpenAPI 3.0.3 contract.
           </p>
-          <p className="docs-meta mono">[REST · OpenAPI 3.0.3 · docs/api/openapi.yaml in the repository]</p>
         </header>
 
-        <div className="docs-layout frame">
-          <nav className="docs-index mono" aria-label="On this page">
-            {INDEX.map((item) => (
-              <a key={item.href} href={item.href}>
-                {item.label}
-              </a>
-            ))}
+        <div className="docs-layout">
+          <nav className="docs-index" aria-label="On this page">
+            <p className="docs-index-title">On this page</p>
+            <ul>
+              {INDEX.map((item) => (
+                <li key={item.href}>
+                  <a href={item.href}>{item.label}</a>
+                </li>
+              ))}
+            </ul>
           </nav>
 
           <div className="docs-content">
-            <section id="quickstart" className="docs-section" aria-labelledby="quickstart-title">
-              <h2 id="quickstart-title" className="docs-h2 display">
+            <section id="quickstart" className="docs-section" aria-labelledby="quickstart-title" data-reveal>
+              <h2 id="quickstart-title" className="h2">
                 Quickstart
               </h2>
-              <ol className="steps">
+              <ol className="docs-steps">
                 {QUICKSTART.map((step, index) => (
                   <li key={step.title}>
-                    <span className="step-number display" aria-hidden="true">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <div className="step-copy">
+                    <div className="docs-step-copy">
+                      <span className="docs-step-index" aria-hidden="true">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
                       <h3>{step.title}</h3>
                       <p>{step.body}</p>
                     </div>
-                    <pre className="specimen">{step.code}</pre>
+                    <CodeBlock className="docs-code" code={step.code} />
                   </li>
                 ))}
               </ol>
             </section>
 
-            <section id="concepts" className="docs-section" aria-labelledby="concepts-title">
-              <h2 id="concepts-title" className="docs-h2 display">
+            <section id="concepts" className="docs-section" aria-labelledby="concepts-title" data-reveal>
+              <h2 id="concepts-title" className="h2">
                 Concepts
               </h2>
-              <dl className="concepts">
+              <dl className="docs-concepts">
                 {CONCEPTS.map(([term, meaning]) => (
                   <div key={term}>
                     <dt>{term}</dt>
@@ -74,8 +121,8 @@ export default function DocsPage() {
               </dl>
             </section>
 
-            <section id="rule-language" className="docs-section" aria-labelledby="rule-language-title">
-              <h2 id="rule-language-title" className="docs-h2 display">
+            <section id="rule-language" className="docs-section" aria-labelledby="rule-language-title" data-reveal>
+              <h2 id="rule-language-title" className="h2">
                 Rule language
               </h2>
               <p className="docs-p">
@@ -130,8 +177,8 @@ export default function DocsPage() {
             </section>
 
             {GUIDES.map((guide) => (
-              <section key={guide.id} id={guide.id} className="docs-section" aria-labelledby={`${guide.id}-title`}>
-                <h2 id={`${guide.id}-title`} className="docs-h2 display">
+              <section key={guide.id} id={guide.id} className="docs-section" aria-labelledby={`${guide.id}-title`} data-reveal>
+                <h2 id={`${guide.id}-title`} className="h2">
                   {guide.title}
                 </h2>
                 {guide.body.map((paragraph) => (
@@ -139,19 +186,25 @@ export default function DocsPage() {
                     {paragraph}
                   </p>
                 ))}
-                <pre className="specimen">{guide.code}</pre>
+                <CodeBlock className="docs-code" code={guide.code} />
               </section>
             ))}
 
-            <section className="docs-cta" aria-label="Get started">
-              <p className="docs-cta-title display">Ready to wire it in?</p>
-              <ConsoleLink className="btn btn-signal btn-big">Open the console</ConsoleLink>
+            <section className="docs-cta" aria-labelledby="docs-cta-title">
+              <h2 id="docs-cta-title" className="h2">
+                Ready to wire it in?
+                <br />
+                <span>Create a workspace and send your first event to sandbox.</span>
+              </h2>
+              <a className="pill" href={DASHBOARD_URL}>
+                Start building
+                <Chevron />
+              </a>
             </section>
           </div>
         </div>
       </main>
-      <Footer />
-      <DocsVisit />
+      <SiteFooter />
     </>
   );
 }

@@ -85,7 +85,7 @@ GET /v1/admin/redemptions/{id}/attempts`,
 export const CONCEPTS = [
   ['Environment', 'A boundary inside your workspace, such as sandbox or production.'],
   ['Integration credential', 'A server-side key scoped to one environment.'],
-  ['External user ID', 'Your own stable customer id, mapped to MotifEngine state.'],
+  ['External user ID', 'Your own stable customer id, mapped to Motif state.'],
   ['Event', 'A fact that happened in your product.'],
   ['Event contract', 'An immutable, versioned payload schema.'],
   ['Rule', 'A published when / if / then automation.'],
@@ -181,6 +181,18 @@ GET /v1/events/{externalEventId}   status of one receipt`,
     code: `POST /v1/redemptions/{redemption_id}/retry
 reserved → delivering → fulfilled
                       → failed (points released)`,
+  },
+  {
+    id: 'leaderboards',
+    title: 'Leaderboards and rounds',
+    body: [
+      'A leaderboard ranks users by what they earn during a round: points in one currency, or XP. Spending, expiry, conversions and refunds never change a ranking, and a replayed award never counts twice.',
+      'Each board runs as a series of rounds. A manual board starts every round by hand, so one week can run six days and the next eight; a recurring board repeats every day, week or month in its own timezone and creates each round the first time it is needed.',
+    ],
+    code: `GET /v1/leaderboards/weekly?limit=10
+GET /v1/leaderboards/weekly?round=previous
+GET /v1/leaderboards/weekly/rounds
+GET /v1/users/{externalUserId}/leaderboards`,
   },
   {
     id: 'access',
