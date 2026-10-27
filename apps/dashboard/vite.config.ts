@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // The router plugin generates src/routeTree.gen.ts from src/routes and must run before React.
+  plugins: [tanstackRouter({ target: 'react', routesDirectory: './src/routes', generatedRouteTree: './src/routeTree.gen.ts' }), react(), tailwindcss()],
   server: {
     port: 4173,
     strictPort: true,

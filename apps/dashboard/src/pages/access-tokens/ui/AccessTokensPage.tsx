@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconKey, IconPlu
 import { createAccessToken, fetchAccessTokens, fetchEnvironments, revokeAccessToken, type AccessToken, type AccessTokenScope, type Environment } from '../../../shared/api/client';
 import { formatDateTime } from '../../../shared/lib/format';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { CustomSelect } from '../../../shared/ui/CustomSelect';
 import { PageHeader } from '../../../shared/ui/PageHeader';
 
@@ -53,7 +54,6 @@ export function AccessTokensPage() {
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState<{ token: string; access_token: AccessToken } | null>(null);
@@ -75,8 +75,17 @@ export function AccessTokensPage() {
   const environmentName = useMemo(() => new Map(environments.map((item) => [item.environment_id, item.name])), [environments]);
   const activeCount = tokens.filter((token) => tokenState(token).label === 'Active').length;
 
-  function beginCreate() { setForm({ ...emptyForm(), environmentIds: scope ? [scope.environment_id] : [] }); setCreated(null); setError(null); setOpen(true); }
-  function closeEditor() { setOpen(false); setCreated(null); setError(null); }
+  const navigate = useNavigate();
+  const open = Boolean(useMatchRoute()({ to: '/access-tokens/new' }));
+  // Opening the form starts it fresh; leaving it forgets a revealed token.
+  useEffect(() => {
+    if (open) beginCreate();
+    else { setCreated(null); setError(null); }
+  }, [open]);
+
+  function beginCreate() { setForm({ ...emptyForm(), environmentIds: scope ? [scope.environment_id] : [] }); setCreated(null); setError(null); }
+  function closeEditor() { void navigate({ to: '/access-tokens' }); }
+  const startCreate = () => void navigate({ to: '/access-tokens/new' });
   function toggleScope(value: AccessTokenScope) {
     if (value === 'read') return;
     setForm((current) => ({ ...current, scopes: current.scopes.includes(value) ? current.scopes.filter((item) => item !== value) : [...current.scopes, value] }));
@@ -112,7 +121,7 @@ export function AccessTokensPage() {
   }
 
   return <main className={`page page-resource ${open ? 'page-narrow' : ''}`}>
-    <PageHeader breadcrumb={['Workspace', 'Access tokens', ...(open ? [created ? 'Created' : 'Create'] : [])]} title={open ? created ? 'Token created' : 'Create access token' : 'Access tokens'} description={open ? created ? 'Copy the token now. It is shown only once.' : 'Choose what the token may do and where.' : 'Long-lived tokens for MCP clients and scripts that configure and inspect this workspace. Your backend keeps sending events with the REST integration key.'} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to tokens</button> : <button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Create token</button>} />
+    <PageHeader breadcrumb={['Workspace', 'Access tokens', ...(open ? [created ? 'Created' : 'Create'] : [])]} title={open ? created ? 'Token created' : 'Create access token' : 'Access tokens'} description={open ? created ? 'Copy the token now. It is shown only once.' : 'Choose what the token may do and where.' : 'Long-lived tokens for MCP clients and scripts that configure and inspect this workspace. Your backend keeps sending events with the REST integration key.'} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to tokens</button> : <button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Create token</button>} />
 
     {!open && <section className="panel" aria-label="Access tokens">
       <div className="toolbar">
@@ -120,7 +129,7 @@ export function AccessTokensPage() {
         <div className="toolbar-controls"><button className="icon-button" type="button" onClick={() => void refresh()} aria-label="Refresh access tokens"><IconRefresh size={15} stroke={1.75} className={loading ? 'spin' : ''} /></button></div>
       </div>
       {error && <div className="panel-body"><p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span><button className="text-button" type="button" onClick={() => void refresh()}>Retry</button></p></div>}
-      {loading ? <div className="skeleton-rows" aria-label="Loading access tokens"><span /><span /></div> : tokens.length === 0 ? <div className="empty-state"><IconKey size={22} stroke={1.5} aria-hidden="true" /><strong>No access tokens yet</strong><span>Create one to connect Claude Code, Cursor, VS Code or another MCP client to this workspace.</span><button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Create token</button></div> : <ul className="resource-list">{tokens.map((token) => {
+      {loading ? <div className="skeleton-rows" aria-label="Loading access tokens"><span /><span /></div> : tokens.length === 0 ? <div className="empty-state"><IconKey size={22} stroke={1.5} aria-hidden="true" /><strong>No access tokens yet</strong><span>Create one to connect Claude Code, Cursor, VS Code or another MCP client to this workspace.</span><button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Create token</button></div> : <ul className="resource-list">{tokens.map((token) => {
         const state = tokenState(token);
         const where = token.environment_ids.length === 0 ? 'All environments' : token.environment_ids.map((id) => environmentName.get(id) ?? id).join(', ');
         return <li key={token.id} className={`resource-row ${state.label === 'Active' ? '' : 'is-archived'}`}>

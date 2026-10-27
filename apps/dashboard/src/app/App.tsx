@@ -1,56 +1,10 @@
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
-import { IconAlertTriangle, IconArrowRight, IconBolt, IconBook2, IconCalendarEvent, IconChartBar, IconCheck, IconCode, IconCoin, IconCopy, IconExternalLink, IconFlag, IconGift, IconInfoCircle, IconKey, IconLayoutDashboard, IconLogout, IconMenu2, IconSparkles, IconTarget, IconTrophy, IconUserCircle, IconX } from '@tabler/icons-react';
-import { OverviewPage } from '../pages/overview/ui/OverviewPage';
-import { LoyaltyPage } from '../pages/loyalty/ui/LoyaltyPage';
-import { ConfigurePage } from '../pages/configure/ui/ConfigurePage';
-import { CatalogPage } from '../pages/catalog/ui/CatalogPage';
-import { EngagementPage } from '../pages/engagement/ui/EngagementPage';
-import { AnalyzePage } from '../pages/analyze/ui/AnalyzePage';
-import { AccessTokensPage } from '../pages/access-tokens/ui/AccessTokensPage';
-import { ScopeProvider, useScope } from '../shared/scope/ScopeContext';
-import { TopbarSlotProvider } from '../shared/ui/PageHeader';
-import { clearAdminSession, fetchAdminPrincipal, loginAdmin, logoutAdmin, signupTenant, type AdminPrincipal, type TenantSignupResponse } from '../shared/api/client';
-
-type View = 'overview' | 'loyalty' | 'events' | 'automations' | 'currency' | 'level' | 'mission' | 'achievement' | 'reward' | 'goal' | 'campaign' | 'analyze' | 'access';
-type NavItem = { label: string; icon: ComponentType<{ size?: number; stroke?: number }>; view: View };
-type NavGroup = { label: string; items: NavItem[] };
-
-const viewPaths: Record<View, string> = {
-  overview: '/',
-  loyalty: '/loyalty',
-  events: '/events',
-  automations: '/automations',
-  currency: '/currencies',
-  level: '/levels',
-  mission: '/missions',
-  achievement: '/achievements',
-  reward: '/rewards',
-  goal: '/goals',
-  campaign: '/campaigns',
-  analyze: '/reports',
-  access: '/access-tokens',
-};
-
-function viewFromPath(pathname: string): View {
-  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
-  const entries = Object.entries(viewPaths) as [View, string][];
-  const match = entries.find(([, path]) => path === normalizedPath) ?? entries.find(([, path]) => path !== '/' && normalizedPath.startsWith(`${path}/`));
-  return match?.[0] ?? 'overview';
-}
-
-function isKnownPath(pathname: string) {
-  const normalizedPath = pathname.replace(/\/+$/, '') || '/';
-  return Object.values(viewPaths).includes(normalizedPath) || normalizedPath === '/events/new' || normalizedPath === '/automations/new';
-}
-
-const navGroups: NavGroup[] = [
-  { label: 'Operate', items: [{ label: 'Overview', icon: IconLayoutDashboard, view: 'overview' }, { label: 'Points & rewards', icon: IconUserCircle, view: 'loyalty' }] },
-  { label: 'Build', items: [{ label: 'Events', icon: IconCode, view: 'events' }, { label: 'Automations', icon: IconBolt, view: 'automations' }] },
-  { label: 'Loyalty', items: [{ label: 'Currencies', icon: IconCoin, view: 'currency' }, { label: 'Levels', icon: IconTrophy, view: 'level' }, { label: 'Missions', icon: IconFlag, view: 'mission' }, { label: 'Achievements', icon: IconSparkles, view: 'achievement' }, { label: 'Rewards', icon: IconGift, view: 'reward' }] },
-  { label: 'Engagement', items: [{ label: 'Goals', icon: IconTarget, view: 'goal' }, { label: 'Campaigns', icon: IconCalendarEvent, view: 'campaign' }] },
-  { label: 'Analyze', items: [{ label: 'Reports', icon: IconChartBar, view: 'analyze' }] },
-  { label: 'Workspace', items: [{ label: 'Access tokens', icon: IconKey, view: 'access' }] },
-];
+import { useEffect, useState } from 'react';
+import { IconAlertTriangle, IconArrowRight, IconCheck, IconCopy, IconInfoCircle } from '@tabler/icons-react';
+import { RouterProvider } from '@tanstack/react-router';
+import { router } from './router';
+import { ScopeProvider } from '../shared/scope/ScopeContext';
+import { BrandMark } from '../shared/ui/BrandMark';
+import { clearAdminSession, fetchAdminPrincipal, loginAdmin, signupTenant, type AdminPrincipal, type TenantSignupResponse } from '../shared/api/client';
 
 export function App() {
   const [principal, setPrincipal] = useState<AdminPrincipal | null>(null);
@@ -75,7 +29,7 @@ export function App() {
   if (!principal) return <LoginScreen onAuthenticated={(nextPrincipal) => { setPrincipal(nextPrincipal); setAuthState('signed_in'); }} />;
   if (principal.role === 'super_admin') return <OpsOnlyScreen email={principal.email} onSignedOut={() => { clearAdminSession(); setPrincipal(null); setAuthState('signed_out'); }} />;
   if (principal.role !== 'tenant_admin') return <AccessDeniedScreen onSignedOut={() => { clearAdminSession(); setPrincipal(null); setAuthState('signed_out'); }} />;
-  return <ScopeProvider><ConsoleShell principal={principal} onSignedOut={() => { setPrincipal(null); setAuthState('signed_out'); }} /></ScopeProvider>;
+  return <ScopeProvider><RouterProvider router={router} context={{ principal, signOut: () => { setPrincipal(null); setAuthState('signed_out'); } }} /></ScopeProvider>;
 }
 
 function AuthLoading() {
@@ -161,75 +115,4 @@ function WorkspaceCreatedScreen({ signup, onContinue }: { signup: TenantSignupRe
     <div className="secret-field"><span className="field-label">REST integration key</span><div className="secret-value"><code>{signup.integration_key}</code><button className="icon-button" type="button" onClick={() => void copyKey()} aria-label={copied ? 'Integration key copied' : 'Copy integration key'}>{copied ? <IconCheck size={15} /> : <IconCopy size={15} />}</button></div><small className="field-help">Use this key for server-side event requests. Never ship it to a browser or mobile app.</small></div>
     <button className="primary-button auth-submit" type="button" onClick={onContinue}>Open workspace <IconArrowRight size={15} /></button>
   </section></main>;
-}
-
-function BrandMark() {
-  return <span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16"><rect x="2" y="8" width="3" height="6" rx="1" /><rect x="6.5" y="5" width="3" height="9" rx="1" /><rect x="11" y="2" width="3" height="12" rx="1" /></svg></span>;
-}
-
-function ConsoleShell({ principal, onSignedOut }: { principal: AdminPrincipal; onSignedOut: () => void }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [locationPath, setLocationPath] = useState(() => window.location.pathname);
-  const view = viewFromPath(locationPath);
-  const { scope, loading: scopeLoading, error: scopeError } = useScope();
-  const docsURL = import.meta.env.VITE_DOCS_URL || `${window.location.protocol}//${window.location.hostname}:4174/docs`;
-
-  useEffect(() => {
-    if (!isKnownPath(window.location.pathname)) {
-      window.history.replaceState({}, '', viewPaths.overview);
-      setLocationPath(viewPaths.overview);
-    }
-    const handlePopState = () => setLocationPath(window.location.pathname);
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  function navigate(nextView: View) {
-    const nextPath = viewPaths[nextView];
-    if (window.location.pathname !== nextPath) window.history.pushState({ view: nextView }, '', nextPath);
-    setLocationPath(nextPath);
-    setMobileOpen(false);
-    window.scrollTo({ top: 0 });
-  }
-
-  function navigateConfigure(mode: 'list' | 'create') {
-    const nextPath = `${viewPaths[view]}/${mode === 'create' ? 'new' : ''}`.replace(/\/$/, '') || '/';
-    if (window.location.pathname !== nextPath) window.history.pushState({ view, mode }, '', nextPath);
-    setLocationPath(nextPath);
-    window.scrollTo({ top: 0 });
-  }
-
-  const signOut = async () => {
-    await logoutAdmin().catch(() => undefined);
-    // The browser must leave the tenant console even if the API is unavailable;
-    // never keep a stale session token after the user signs out.
-    clearAdminSession();
-    onSignedOut();
-  };
-
-  const [crumbSlot, setCrumbSlot] = useState<HTMLElement | null>(null);
-  const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
-  const topbarSlots = useMemo(() => ({ crumbs: crumbSlot, actions: actionSlot }), [crumbSlot, actionSlot]);
-  const workspaceInitial = scope?.name.trim().charAt(0).toUpperCase() || 'W';
-  const page = view === 'overview' ? <OverviewPage principal={principal} onNavigate={navigate} /> : view === 'loyalty' ? <LoyaltyPage onNavigate={navigate} /> : view === 'events' || view === 'automations' ? <ConfigurePage area={view === 'events' ? 'events' : 'rules'} initialMode={/\/new\/?$/.test(locationPath) ? 'create' : 'list'} onModeChange={navigateConfigure} /> : view === 'currency' || view === 'level' || view === 'mission' || view === 'achievement' || view === 'reward' ? <CatalogPage key={view} kind={view} /> : view === 'goal' || view === 'campaign' ? <EngagementPage key={view} kind={view} /> : view === 'analyze' ? <AnalyzePage /> : view === 'access' ? <AccessTokensPage /> : <OverviewPage principal={principal} onNavigate={navigate} />;
-
-  return <div className="app-shell">
-    <a className="skip-link" href="#main-content">Skip to content</a>
-    <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Console navigation">
-      <div className="sidebar-brand"><BrandMark /><strong>MotifEngine</strong><button className="icon-button ghost sidebar-close" type="button" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><IconX size={16} /></button></div>
-      <div className="sidebar-workspace" aria-label="Active workspace"><span className="workspace-avatar" aria-hidden="true">{workspaceInitial}</span><span className="sidebar-workspace-copy"><strong>{scope?.name ?? (scopeLoading ? 'Loading workspace…' : 'Workspace unavailable')}</strong><span><span className={`dot ${scope ? scope.status === 'active' ? 'dot-success' : 'dot-danger' : 'dot-muted'}`} />{scope ? scope.environment_name : scopeError ? 'Membership unavailable' : 'Loading environment…'}</span></span></div>
-      <nav className="sidebar-nav" aria-label="Main navigation">{navGroups.map((group) => <div className="nav-group" key={group.label}><span className="nav-label">{group.label}</span><ul>{group.items.map(({ label, icon: Icon, view: itemView }) => { const active = itemView === view; return <li key={itemView}><button className={`nav-item ${active ? 'active' : ''}`} type="button" aria-current={active ? 'page' : undefined} onClick={() => navigate(itemView)}><Icon size={16} stroke={1.75} /><span>{label}</span></button></li>; })}</ul></div>)}</nav>
-      <div className="sidebar-footer"><a className="nav-item" href={docsURL} target="_blank" rel="noopener noreferrer"><IconBook2 size={16} stroke={1.75} /><span>Docs</span><IconExternalLink className="nav-item-trailing" size={14} stroke={1.75} aria-label="Opens in a new tab" /></a><button className="nav-item" type="button" onClick={() => void signOut()}><IconLogout size={16} stroke={1.75} /><span>Sign out</span></button></div>
-    </aside>
-    {mobileOpen && <button className="mobile-scrim" type="button" onClick={() => setMobileOpen(false)} aria-label="Close navigation" />}
-    <div className="app-main">
-      <div className="topbar">
-        <button className="icon-button ghost topbar-menu" type="button" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><IconMenu2 size={18} /></button>
-        <nav className="topbar-crumbs" aria-label="Breadcrumb" ref={setCrumbSlot} />
-        <div className="topbar-actions" ref={setActionSlot} />
-        <span className="scope-chip" title={scope ? `${scope.name} · ${scope.environment_name}` : undefined}><span className={`dot ${scope ? scope.status === 'active' ? 'dot-success' : 'dot-danger' : 'dot-muted'}`} />{scope ? scope.environment_name : scopeLoading ? 'Connecting…' : 'No environment'}</span>
-      </div>
-      <div className="app-content" id="main-content"><TopbarSlotProvider value={topbarSlots}>{page}</TopbarSlotProvider></div>
-    </div>
-  </div>;
 }

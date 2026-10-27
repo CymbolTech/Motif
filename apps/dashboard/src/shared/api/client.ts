@@ -422,6 +422,57 @@ export type Reward = {
   updated_at: string;
 };
 
+export type LeaderboardSchedule = {
+  type: 'manual' | 'recurring';
+  every?: 'day' | 'week' | 'month';
+  interval?: number;
+  anchor?: string;
+  timezone?: string;
+  week_start?: string;
+};
+
+export type LeaderboardRound = {
+  id: string;
+  number: number;
+  name: string;
+  starts_at: string;
+  ends_at: string | null;
+  status: 'scheduled' | 'active' | 'ended';
+  created_by: 'admin' | 'schedule';
+  created_at: string;
+  participants?: number;
+  leader?: LeaderboardEntry;
+};
+
+export type LeaderboardEntry = { rank: number; user_id: string; score: number; reached_at: string };
+
+export type Leaderboard = {
+  id: string;
+  tenant_id: string;
+  environment_id: string;
+  key: string;
+  name: string;
+  description: string;
+  metric: { type: 'points' | 'xp'; currency?: string; currency_id?: string };
+  schedule: LeaderboardSchedule;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  current_round: LeaderboardRound | null;
+};
+
+export type LeaderboardStandings = {
+  leaderboard: Leaderboard;
+  round: LeaderboardRound | null;
+  next_round: LeaderboardRound | null;
+  participants: number;
+  entries: LeaderboardEntry[];
+  limit: number;
+  offset: number;
+};
+
+export type LeaderboardInput = { tenant_id: string; environment_id: string; key: string; name: string; description: string; metric: { type: 'points' | 'xp'; currency?: string }; schedule: LeaderboardSchedule };
+
 export type Currency = {
   id: string;
   tenant_id: string;
@@ -1149,7 +1200,41 @@ export const updateReward = (id: string, input: { tenant_id: string; environment
 export const updateGoal = (id: string, input: { tenant_id: string; environment_id: string; name: string; description?: string; event_type: string; target_count: number }) => updateAdminResource<Goal>('goals', id, input);
 export const updateCampaign = (id: string, input: { tenant_id: string; environment_id: string; goal_id?: string; name: string; description?: string; event_type: string; starts_at?: string; ends_at?: string }) => updateAdminResource<Campaign>('campaigns', id, input);
 
-export async function updateCatalogStatus(input: { tenant_id: string; environment_id: string; resource: 'currency' | 'reward' | 'mission' | 'achievement' | 'level'; id: string; active: boolean }): Promise<{ resource: string; id: string; active: boolean }> {
+export const fetchLeaderboards = (filters?: { tenant_id?: string; environment_id?: string }) => fetchAdminCollection<Leaderboard>('leaderboards', filters);
+export const createLeaderboard = (input: LeaderboardInput) => createAdminResource<Leaderboard>('leaderboards', input);
+export const updateLeaderboard = (id: string, input: LeaderboardInput) => updateAdminResource<Leaderboard>('leaderboards', id, input);
+
+export async function deleteLeaderboard(scope: { tenant_id: string; environment_id: string }, id: string): Promise<{ deleted: boolean; rounds_deleted: number }> {
+  const params = new URLSearchParams(scope);
+  return readResponse(await fetch(`/api/v1/admin/leaderboards/${encodeURIComponent(id)}?${params}`, { method: 'DELETE', headers: adminHeaders() }));
+}
+
+type LeaderboardScope = { tenant_id: string; environment_id: string };
+
+function leaderboardPath(id: string, suffix = '') {
+  return `/api/v1/admin/leaderboards/${encodeURIComponent(id)}${suffix}`;
+}
+
+export async function fetchLeaderboardStandings(scope: LeaderboardScope, id: string, options: { round?: string; limit?: number; offset?: number } = {}): Promise<LeaderboardStandings> {
+  const params = new URLSearchParams({ ...scope, round: options.round ?? 'current', limit: String(options.limit ?? 25), offset: String(options.offset ?? 0) });
+  return readResponse<LeaderboardStandings>(await fetch(`${leaderboardPath(id, '/standings')}?${params}`, { headers: adminHeaders() }));
+}
+
+export async function fetchLeaderboardRounds(scope: LeaderboardScope, id: string, limit = 25): Promise<LeaderboardRound[]> {
+  const params = new URLSearchParams({ ...scope, limit: String(limit) });
+  return readResponse<LeaderboardRound[]>(await fetch(`${leaderboardPath(id, '/rounds')}?${params}`, { headers: adminHeaders() }));
+}
+
+async function sendLeaderboardRound(method: 'POST' | 'PATCH', path: string, body: Record<string, unknown>): Promise<LeaderboardRound> {
+  return readResponse<LeaderboardRound>(await fetch(path, { method, headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) }));
+}
+
+export const createLeaderboardRound = (scope: LeaderboardScope, id: string, input: { name?: string; starts_at?: string; ends_at?: string; end_current?: boolean }) => sendLeaderboardRound('POST', leaderboardPath(id, '/rounds'), { ...scope, ...input });
+export const updateLeaderboardRound = (scope: LeaderboardScope, id: string, roundId: string, input: { name?: string; ends_at?: string | null }) => sendLeaderboardRound('PATCH', leaderboardPath(id, `/rounds/${encodeURIComponent(roundId)}`), { ...scope, ...input });
+export const endLeaderboardRound = (scope: LeaderboardScope, id: string, roundId: string) => sendLeaderboardRound('POST', leaderboardPath(id, `/rounds/${encodeURIComponent(roundId)}/end`), scope);
+export const cancelLeaderboardRound = (scope: LeaderboardScope, id: string, roundId: string) => sendLeaderboardRound('POST', leaderboardPath(id, `/rounds/${encodeURIComponent(roundId)}/cancel`), scope);
+
+export async function updateCatalogStatus(input: { tenant_id: string; environment_id: string; resource: 'currency' | 'reward' | 'mission' | 'achievement' | 'level' | 'leaderboard'; id: string; active: boolean }): Promise<{ resource: string; id: string; active: boolean }> {
   const response = await fetch('/api/v1/admin/catalog-status', { method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(input) });
   return readResponse<{ resource: string; id: string; active: boolean }>(response);
 }

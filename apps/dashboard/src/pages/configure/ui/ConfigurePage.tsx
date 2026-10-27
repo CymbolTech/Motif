@@ -7,6 +7,7 @@ import { GuidePanel } from '../../../shared/ui/GuidePanel';
 import { PayloadShapeBuilder, createPayloadField, payloadFieldsFromSchema, payloadFieldNamePattern, payloadSampleRows, schemaFromPayloadFields, type PayloadField } from '../../../shared/ui/PayloadShapeBuilder';
 import { createEventType, createRule, createRuleVersion, fetchCurrencies, fetchEventTypes, fetchRules, fetchScopedEventStatus, publishRule, submitAdminTestEvent, type Currency, type EventReceipt, type EventType, type Rule, type RuleAction, type Tenant } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { PageHeader } from '../../../shared/ui/PageHeader';
 
 type ConfigureTab = 'events' | 'rules';
@@ -484,33 +485,36 @@ function RegistryRail({ tab, eventTypes, rules, loading, canCreate, onCreate, on
 
 type ConfigurePageProps = {
   area: ConfigureTab;
-  initialMode?: 'list' | 'create';
-  onModeChange?: (mode: 'list' | 'create') => void;
 };
 
-export function ConfigurePage({ area, initialMode = 'list', onModeChange }: ConfigurePageProps) {
+export function ConfigurePage({ area }: ConfigurePageProps) {
   const { scope } = useScope();
   const tab = area;
-  const [mode, setMode] = useState<'list' | 'create'>(initialMode);
-  const [editingEvent, setEditingEvent] = useState<EventType | null>(null);
-  const [editingRule, setEditingRule] = useState<Rule | null>(null);
+  const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // The route says what is open: /new creates, /$id/edit edits, the section root lists.
+  const creating = Boolean(area === 'events' ? matchRoute({ to: '/events/new' }) : matchRoute({ to: '/automations/new' }));
+  const editMatch = area === 'events' ? matchRoute({ to: '/events/$id/edit' }) : matchRoute({ to: '/automations/$id/edit' });
+  const editingId = editMatch ? editMatch.id : null;
+  const mode: 'list' | 'create' = creating || editingId ? 'create' : 'list';
+  const editingEvent = tab === 'events' && editingId ? eventTypes.find((item) => item.name === editingId) ?? null : null;
+  const editingRule = tab === 'rules' && editingId ? rules.find((item) => item.id === editingId) ?? null : null;
+
   function goToMode(nextMode: 'list' | 'create') {
-    setMode(nextMode);
-    onModeChange?.(nextMode);
+    if (area === 'events') void navigate({ to: nextMode === 'create' ? '/events/new' : '/events' });
+    else void navigate({ to: nextMode === 'create' ? '/automations/new' : '/automations' });
   }
 
-  useEffect(() => { setMode(initialMode); }, [initialMode]);
-  useEffect(() => {
-    setMode(initialMode);
-    setEditingEvent(null);
-    setEditingRule(null);
-  }, [area, scope?.tenant_id, scope?.environment_id]);
+  function edit(id: string) {
+    if (area === 'events') void navigate({ to: '/events/$id/edit', params: { id } });
+    else void navigate({ to: '/automations/$id/edit', params: { id } });
+  }
 
   const refresh = useCallback(async () => {
     if (!scope) { setEventTypes([]); setCurrencies([]); setRules([]); setLoading(false); return; }
@@ -533,12 +537,12 @@ export function ConfigurePage({ area, initialMode = 'list', onModeChange }: Conf
     } catch (publishError) { setError(publishError instanceof Error ? publishError.message : 'Rule could not be published.'); }
   }
 
-  const startCreate = () => { setEditingEvent(null); setEditingRule(null); goToMode('create'); };
+  const startCreate = () => goToMode('create');
   const listEmpty = tab === 'events' ? eventTypes.length === 0 : rules.length === 0;
   return <main className={`page ${mode === 'create' ? 'page-builder' : 'page-resource'}`}>
-    <PageHeader breadcrumb={['Workspace', tab === 'rules' ? 'Automations' : 'Events', ...(mode === 'create' ? [editingEvent || editingRule ? 'Edit' : 'Create'] : [])]} title={mode === 'list' ? tab === 'rules' ? 'Automations' : 'Events' : tab === 'rules' ? editingRule ? `Edit ${editingRule.name}` : 'Create automation' : editingEvent ? `Edit ${editingEvent.name}` : 'Create event'} description={tab === 'rules' ? 'Decide what happens after a trusted event. Drafts only run after publishing.' : 'Define the event contracts your product sends to this workspace.'} actions={mode === 'list' ? <button className="primary-button" type="button" disabled={!scope} onClick={startCreate}><IconPlus size={15} stroke={1.75} />{tab === 'rules' ? 'Add automation' : 'Add event'}</button> : <button className="secondary-button" type="button" onClick={() => { goToMode('list'); setEditingEvent(null); setEditingRule(null); }}><IconArrowLeft size={15} stroke={1.75} />Back to list</button>} />
+    <PageHeader breadcrumb={['Workspace', tab === 'rules' ? 'Automations' : 'Events', ...(mode === 'create' ? [editingEvent || editingRule ? 'Edit' : 'Create'] : [])]} title={mode === 'list' ? tab === 'rules' ? 'Automations' : 'Events' : tab === 'rules' ? editingRule ? `Edit ${editingRule.name}` : 'Create automation' : editingEvent ? `Edit ${editingEvent.name}` : 'Create event'} description={tab === 'rules' ? 'Decide what happens after a trusted event. Drafts only run after publishing.' : 'Define the event contracts your product sends to this workspace.'} actions={mode === 'list' ? <button className="primary-button" type="button" disabled={!scope} onClick={startCreate}><IconPlus size={15} stroke={1.75} />{tab === 'rules' ? 'Add automation' : 'Add event'}</button> : <button className="secondary-button" type="button" onClick={() => goToMode('list')}><IconArrowLeft size={15} stroke={1.75} />Back to list</button>} />
     {error && <p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span><button className="text-button" type="button" onClick={() => void refresh()}>Try again</button></p>}
     {mode === 'list' && <GuidePanel id={`guide-${tab}`} title={tab === 'rules' ? 'Automations' : 'Events'} {...configureGuide[tab]} defaultOpen={!loading && !error && listEmpty} />}
-    {mode === 'list' ? <RegistryRail tab={tab} eventTypes={eventTypes} rules={rules} loading={loading} canCreate={Boolean(scope)} onCreate={startCreate} onRefresh={() => void refresh()} onPublish={(rule) => void handlePublish(rule)} onEditEvent={(eventType) => { setEditingEvent(eventType); setEditingRule(null); goToMode('create'); }} onEditRule={(rule) => { setEditingRule(rule); setEditingEvent(null); goToMode('create'); }} /> : tab === 'events' ? <EventBuilder activeScope={scope} editingEvent={editingEvent} onCancelEdit={() => { setEditingEvent(null); goToMode('list'); }} onCreated={(eventType) => { setEventTypes((current) => [eventType, ...current.filter((item) => item.name !== eventType.name || item.tenant_id !== eventType.tenant_id || item.environment_id !== eventType.environment_id)]); setEditingEvent(null); goToMode('list'); }} /> : <RuleBuilder activeScope={scope} eventTypes={eventTypes} currencies={currencies} editingRule={editingRule} onCancelEdit={() => { setEditingRule(null); goToMode('list'); }} onCreated={(rule) => { setRules((current) => [rule, ...current.filter((item) => item.id !== rule.id)]); setEditingRule(null); goToMode('list'); }} onEventCreated={(eventType) => setEventTypes((current) => [eventType, ...current.filter((item) => item.name !== eventType.name || item.tenant_id !== eventType.tenant_id || item.environment_id !== eventType.environment_id)])} onCurrencyCreated={(currency) => setCurrencies((current) => [currency, ...current.filter((item) => item.code !== currency.code || item.tenant_id !== currency.tenant_id || item.environment_id !== currency.environment_id)])} />}
+    {mode === 'list' ? <RegistryRail tab={tab} eventTypes={eventTypes} rules={rules} loading={loading} canCreate={Boolean(scope)} onCreate={startCreate} onRefresh={() => void refresh()} onPublish={(rule) => void handlePublish(rule)} onEditEvent={(eventType) => edit(eventType.name)} onEditRule={(rule) => edit(rule.id)} /> : editingId && !editingEvent && !editingRule ? loading || !scope ? <div className="skeleton-rows" aria-label="Loading"><span /><span /><span /></div> : <section className="panel"><div className="empty-state"><IconAlertTriangle size={22} stroke={1.5} aria-hidden="true" /><strong>{tab === 'rules' ? 'Automation' : 'Event'} not found</strong><span>It may have been removed, or it belongs to another environment.</span><button className="secondary-button" type="button" onClick={() => goToMode('list')}><IconArrowLeft size={15} stroke={1.75} />Back to list</button></div></section> : tab === 'events' ? <EventBuilder activeScope={scope} editingEvent={editingEvent} onCancelEdit={() => goToMode('list')} onCreated={(eventType) => { setEventTypes((current) => [eventType, ...current.filter((item) => item.name !== eventType.name || item.tenant_id !== eventType.tenant_id || item.environment_id !== eventType.environment_id)]); goToMode('list'); }} /> : <RuleBuilder activeScope={scope} eventTypes={eventTypes} currencies={currencies} editingRule={editingRule} onCancelEdit={() => goToMode('list')} onCreated={(rule) => { setRules((current) => [rule, ...current.filter((item) => item.id !== rule.id)]); goToMode('list'); }} onEventCreated={(eventType) => setEventTypes((current) => [eventType, ...current.filter((item) => item.name !== eventType.name || item.tenant_id !== eventType.tenant_id || item.environment_id !== eventType.environment_id)])} onCurrencyCreated={(currency) => setCurrencies((current) => [currency, ...current.filter((item) => item.code !== currency.code || item.tenant_id !== currency.tenant_id || item.environment_id !== currency.environment_id)])} />}
   </main>;
 }

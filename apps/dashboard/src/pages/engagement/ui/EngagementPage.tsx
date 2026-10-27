@@ -5,9 +5,14 @@ import { CustomSelect } from '../../../shared/ui/CustomSelect';
 import { GuidePanel } from '../../../shared/ui/GuidePanel';
 import { createCampaign, createGoal, fetchCampaignAnalytics, fetchCampaigns, fetchEventTypes, fetchGoals, updateCampaign, updateGoal, type Campaign, type CampaignAnalytics, type EventType, type Goal } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { PageHeader } from '../../../shared/ui/PageHeader';
 
 export type EngagementKind = 'goal' | 'campaign';
+const engagementRoutes = {
+  goal: { list: '/goals', create: '/goals/new', edit: '/goals/$id/edit' },
+  campaign: { list: '/campaigns', create: '/campaigns/new', edit: '/campaigns/$id/edit' },
+} as const;
 const createEventOption = '__create_event__';
 const createGoalOption = '__create_goal__';
 const emptyForm = () => ({ id: '', name: '', description: '', eventType: '', targetCount: '1', goalId: '', startsAt: '', endsAt: '' });
@@ -26,14 +31,15 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Goal | Campaign | null>(null);
   const [formKind, setFormKind] = useState<EngagementKind>(kind);
   const [creatingGoalForCampaign, setCreatingGoalForCampaign] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [campaignDraft, setCampaignDraft] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [creatingEvent, setCreatingEvent] = useState(false);
+  const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
+  const routes = engagementRoutes[kind];
 
   const refresh = useCallback(async () => {
     if (!scope) { setGoals([]); setCampaigns([]); setAnalytics([]); setEventTypes([]); setLoading(false); return; }
@@ -46,7 +52,7 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
     finally { setLoading(false); }
   }, [scope]);
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { setOpen(false); setEditing(null); setFormKind(kind); setForm(emptyForm()); setQuery(''); setCreatingGoalForCampaign(false); }, [kind, scope?.tenant_id, scope?.environment_id]);
+  useEffect(() => { setQuery(''); }, [kind, scope?.tenant_id, scope?.environment_id]);
 
   const items = kind === 'goal' ? goals : campaigns;
   const visible = useMemo(() => items.filter((item) => `${item.name} ${item.id} ${item.event_type}`.toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [items, query]);
@@ -54,10 +60,9 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
   const singular = kind === 'goal' ? 'goal' : 'campaign';
   const intro = kind === 'goal' ? 'Set a measurable event target for this workspace.' : 'Group event activity into a named time window and follow its results.';
 
-  function beginCreate() { setEditing(null); setFormKind(kind); setForm(emptyForm()); setCreatingGoalForCampaign(false); setError(null); setOpen(true); }
+  function beginCreate() { setFormKind(kind); setForm(emptyForm()); setCreatingGoalForCampaign(false); setError(null); }
   function localDateTime(value?: string) { return value ? new Date(value).toISOString().slice(0, 16) : ''; }
   function beginEdit(item: Goal | Campaign) {
-    setEditing(item);
     if (kind === 'goal') {
       const goal = item as Goal;
       setFormKind('goal');
@@ -69,11 +74,23 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
     }
     setCreatingGoalForCampaign(false);
     setError(null);
-    setOpen(true);
   }
   function update(field: keyof ReturnType<typeof emptyForm>, value: string) { setForm((current) => ({ ...current, [field]: value })); setError(null); }
   function createGoalInline() { setCampaignDraft(form); setForm(emptyForm()); setFormKind('goal'); setCreatingGoalForCampaign(true); setError(null); }
   function backToCampaign() { setForm(campaignDraft); setFormKind('campaign'); setCreatingGoalForCampaign(false); setError(null); }
+
+  // The route says what is open: /new creates, /$id/edit edits, the section root lists.
+  const creating = Boolean(matchRoute({ to: routes.create }));
+  const editMatch = matchRoute({ to: routes.edit });
+  const editId = editMatch ? editMatch.id : null;
+  const editing = editId ? (kind === 'goal' ? goals : campaigns as (Goal | Campaign)[]).find((entry) => entry.id === editId) ?? null : null;
+  const open = creating || Boolean(editing);
+  // Fill the form once per item opened, not on every refresh of the list.
+  const formFor = creating ? 'new' : editing?.id ?? null;
+  useEffect(() => {
+    if (formFor === 'new') beginCreate();
+    else if (editing) beginEdit(editing);
+  }, [formFor]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -92,7 +109,7 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
         const created = editing ? await updateGoal(editing.id, input) : await createGoal(input);
         setGoals((current) => editing ? current.map((item) => item.id === created.id ? created : item) : [created, ...current]);
         if (creatingGoalForCampaign) { setForm({ ...campaignDraft, goalId: created.id }); setFormKind('campaign'); setCreatingGoalForCampaign(false); }
-        else { setOpen(false); setEditing(null); setForm(emptyForm()); }
+        else { setForm(emptyForm()); void navigate({ to: routes.list }); }
       } else {
         const startsAt = form.startsAt ? new Date(form.startsAt).toISOString() : undefined;
         const endsAt = form.endsAt ? new Date(form.endsAt).toISOString() : undefined;
@@ -100,25 +117,28 @@ export function EngagementPage({ kind }: { kind: EngagementKind }) {
         const input = { ...scope, id, name, description: form.description.trim(), event_type: form.eventType, goal_id: form.goalId || undefined, starts_at: startsAt, ends_at: endsAt };
         const created = editing ? await updateCampaign(editing.id, input) : await createCampaign(input);
         setCampaigns((current) => editing ? current.map((item) => item.id === created.id ? created : item) : [created, ...current]);
-        setOpen(false); setEditing(null); setForm(emptyForm());
+        setForm(emptyForm()); void navigate({ to: routes.list });
       }
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : 'Definition could not be created.'); }
     finally { setSaving(false); }
   }
 
-  const closeEditor = () => { setOpen(false); setEditing(null); setError(null); };
+  const closeEditor = () => void navigate({ to: routes.list });
+  const startCreate = () => void navigate({ to: routes.create });
   const activeCount = items.filter((item) => item.active).length;
   return <main className={`page page-resource ${open ? 'page-narrow' : ''}`}>
-    <PageHeader breadcrumb={['Workspace', 'Engagement', title, ...(open ? [editing ? 'Edit' : 'Create'] : [])]} title={open ? `${editing ? 'Edit' : 'Add'} ${formKind}` : title} description={open ? formKind === 'goal' ? 'Count the event that represents success.' : 'Measure an event across a named time window.' : intro} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button> : <button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {singular}</button>} />
-    {!open && <GuidePanel id={`guide-${kind}`} title={title} {...engagementGuide[kind]} defaultOpen={!loading && !error && items.length === 0} />}
+    <PageHeader breadcrumb={['Workspace', 'Engagement', title, ...(open ? [editing ? 'Edit' : 'Create'] : [])]} title={open ? `${editing ? 'Edit' : 'Add'} ${formKind}` : title} description={open ? formKind === 'goal' ? 'Count the event that represents success.' : 'Measure an event across a named time window.' : intro} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button> : <button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {singular}</button>} />
+    {!open && !editId && <GuidePanel id={`guide-${kind}`} title={title} {...engagementGuide[kind]} defaultOpen={!loading && !error && items.length === 0} />}
 
-    {!open && <section className="panel" aria-label={`${title} list`}>
+    {editId && !editing && <section className="panel">{loading || !scope ? <div className="skeleton-rows" aria-label="Loading"><span /><span /><span /></div> : <div className="empty-state"><IconAlertTriangle size={22} stroke={1.5} aria-hidden="true" /><strong>This {singular} was not found</strong><span>It may have been removed, or it belongs to another environment.</span><button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button></div>}</section>}
+
+    {!open && !editId && <section className="panel" aria-label={`${title} list`}>
       <div className="toolbar">
         <p className="tally"><strong>{items.length}</strong> total <span aria-hidden="true">·</span> <strong>{activeCount}</strong> active</p>
         <div className="toolbar-controls"><label className="search-field"><IconSearch size={15} stroke={1.75} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${title.toLowerCase()}`} aria-label={`Search ${title.toLowerCase()}`} /></label><button className="icon-button" type="button" onClick={() => void refresh()} aria-label={`Refresh ${title.toLowerCase()}`}><IconRefresh size={15} stroke={1.75} className={loading ? 'spin' : ''} /></button></div>
       </div>
       {error && <div className="panel-body"><p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span><button className="text-button" type="button" onClick={() => void refresh()}>Retry</button></p></div>}
-      {loading ? <div className="skeleton-rows" aria-label={`Loading ${title.toLowerCase()}`}><span /><span /><span /></div> : items.length === 0 ? <div className="empty-state"><IconCircleDashed size={22} stroke={1.5} aria-hidden="true" /><strong>No {title.toLowerCase()} yet</strong><span>{kind === 'goal' ? 'Give your team a measurable outcome to work toward.' : 'Create a campaign to see activity during a specific window.'}</span><button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {singular}</button></div> : visible.length === 0 ? <div className="empty-state"><IconSearch size={20} stroke={1.5} aria-hidden="true" /><strong>No matching results</strong><span>Try a different search.</span><button className="secondary-button compact" type="button" onClick={() => setQuery('')}>Clear search</button></div> : <ul className="resource-list">{visible.map((item) => { const report = kind === 'campaign' ? analytics.find((entry) => entry.campaign_id === item.id) : undefined; return <li key={item.id} className={`resource-row ${item.active ? '' : 'is-archived'}`}><div className="resource-row-main"><strong>{item.name}</strong><span><span className="mono">{item.event_type}</span> · {kind === 'goal' ? `${(item as Goal).target_count.toLocaleString()} target events` : `${(report?.event_count ?? 0).toLocaleString()} events · ${(report?.unique_users ?? 0).toLocaleString()} users`}</span>{item.description && <small>{item.description}</small>}</div><span className={`badge ${item.active ? 'badge-success' : 'badge-neutral'}`}><span className="dot" />{item.active ? 'Active' : 'Archived'}</span><div className="resource-row-actions"><button className="text-button" type="button" onClick={() => beginEdit(item)} aria-label={`Edit ${item.name}`}>Edit</button></div></li>; })}</ul>}
+      {loading ? <div className="skeleton-rows" aria-label={`Loading ${title.toLowerCase()}`}><span /><span /><span /></div> : items.length === 0 ? <div className="empty-state"><IconCircleDashed size={22} stroke={1.5} aria-hidden="true" /><strong>No {title.toLowerCase()} yet</strong><span>{kind === 'goal' ? 'Give your team a measurable outcome to work toward.' : 'Create a campaign to see activity during a specific window.'}</span><button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {singular}</button></div> : visible.length === 0 ? <div className="empty-state"><IconSearch size={20} stroke={1.5} aria-hidden="true" /><strong>No matching results</strong><span>Try a different search.</span><button className="secondary-button compact" type="button" onClick={() => setQuery('')}>Clear search</button></div> : <ul className="resource-list">{visible.map((item) => { const report = kind === 'campaign' ? analytics.find((entry) => entry.campaign_id === item.id) : undefined; return <li key={item.id} className={`resource-row ${item.active ? '' : 'is-archived'}`}><div className="resource-row-main"><strong>{item.name}</strong><span><span className="mono">{item.event_type}</span> · {kind === 'goal' ? `${(item as Goal).target_count.toLocaleString()} target events` : `${(report?.event_count ?? 0).toLocaleString()} events · ${(report?.unique_users ?? 0).toLocaleString()} users`}</span>{item.description && <small>{item.description}</small>}</div><span className={`badge ${item.active ? 'badge-success' : 'badge-neutral'}`}><span className="dot" />{item.active ? 'Active' : 'Archived'}</span><div className="resource-row-actions"><Link className="text-button" to={routes.edit} params={{ id: item.id }} aria-label={`Edit ${item.name}`}>Edit</Link></div></li>; })}</ul>}
     </section>}
 
     {open && <section className="panel resource-editor" aria-label={editing ? `Update ${formKind}` : `Set up a ${formKind}`}>

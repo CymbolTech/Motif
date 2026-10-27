@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { IconAlertTriangle, IconArrowDownRight, IconArrowUpRight, IconChevronDown, IconCircleCheck, IconCircleDashed, IconCoin, IconGift, IconRefresh, IconSearch, IconSparkles } from '@tabler/icons-react';
 import { createAdminPointTransaction, fetchAdminRedemptions, fetchAdminUserProfile, fetchAdminUserTransactions, fetchRedemptionAttempts, fetchRewards, redeemAdminReward, retryAdminRedemption, type AdminRedemption, type PointBalance, type PointTransaction, type Redemption, type RedemptionAttempt, type Reward, type UserAchievement, type UserMission, type UserProgression } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { CustomSelect } from '../../../shared/ui/CustomSelect';
 import { GuidePanel } from '../../../shared/ui/GuidePanel';
 import { PageHeader } from '../../../shared/ui/PageHeader';
@@ -17,8 +18,10 @@ type LoyaltyData = {
 
 export function LoyaltyPage({ onNavigate }: { onNavigate: (view: 'currency' | 'mission' | 'achievement' | 'reward') => void }) {
   const { scope, loading: scopeLoading, error: scopeError } = useScope();
-  const [userInput, setUserInput] = useState('user-42');
-  const [userId, setUserId] = useState('user-42');
+  const navigate = useNavigate();
+  // The member being inspected lives in the URL (?user=), so a refresh or a shared link keeps them.
+  const userId = useSearch({ from: '/loyalty' }).user ?? 'user-42';
+  const [userInput, setUserInput] = useState(userId);
   const [data, setData] = useState<LoyaltyData>({ balances: [], transactions: [], missions: [], achievements: [], progression: { user_id: 'user-42', total_xp: 0, level: 0, level_name: 'Unranked' } });
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<AdminRedemption[]>([]);
@@ -66,8 +69,10 @@ export function LoyaltyPage({ onNavigate }: { onNavigate: (view: 'currency' | 'm
     event.preventDefault();
     const nextUser = userInput.trim();
     if (!nextUser) return;
-    setUserId(nextUser);
+    void navigate({ to: '/loyalty', search: { user: nextUser } });
   }
+
+  useEffect(() => { setUserInput(userId); }, [userId]);
 
   async function handleRedeem(reward: Reward) {
     setRedeeming(reward.id);

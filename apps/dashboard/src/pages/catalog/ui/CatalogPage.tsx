@@ -6,6 +6,7 @@ import { CustomSelect } from '../../../shared/ui/CustomSelect';
 import { GuidePanel } from '../../../shared/ui/GuidePanel';
 import { createAchievement, createCurrency, createLevel, createMission, createReward, fetchAchievements, fetchCurrencies, fetchEventTypes, fetchLevels, fetchMissions, fetchRewards, updateAchievement, updateCatalogStatus, updateCurrency, updateLevel, updateMission, updateReward, type Achievement, type Currency, type EventType, type Level, type Mission, type Reward, type Tenant } from '../../../shared/api/client';
 import { useScope } from '../../../shared/scope/ScopeContext';
+import { Link, useMatchRoute, useNavigate } from '@tanstack/react-router';
 import { PageHeader } from '../../../shared/ui/PageHeader';
 
 export type CatalogKind = 'currency' | 'level' | 'mission' | 'achievement' | 'reward';
@@ -19,6 +20,14 @@ const copy: Record<CatalogKind, { title: string; singular: string; intro: string
   achievement: { title: 'Achievements', singular: 'achievement', intro: 'Give users a lasting milestone when they complete an activity.', empty: 'Create an achievement tied to a trusted event.', guide: { purpose: 'Recognize a milestone once and keep it visible as part of the user history.', steps: ['Choose the event and required count.', 'Give the achievement a memorable name.', 'Optionally attach a reward automation for the unlock.'], example: 'Unlock “First 10 orders” after ten order.completed events.', result: 'The user receives a permanent achievement when the count is reached.' } },
   reward: { title: 'Rewards', singular: 'reward', intro: 'Define what users can redeem, for free or with a points currency.', empty: 'Add a reward to make earned points useful.', guide: { purpose: 'Define something valuable users can redeem with their earned balance.', steps: ['Create the reward and describe what the user receives.', 'Choose a currency and redemption cost, or make it free.', 'Connect the redemption to your provider workflow.'], example: 'Create a $10 coffee voucher that costs 500 coins.', result: 'Eligible users can redeem it and the system records the delivery.' } },
 };
+
+const catalogRoutes = {
+  currency: { list: '/currencies', create: '/currencies/new', edit: '/currencies/$id/edit' },
+  level: { list: '/levels', create: '/levels/new', edit: '/levels/$id/edit' },
+  mission: { list: '/missions', create: '/missions/new', edit: '/missions/$id/edit' },
+  achievement: { list: '/achievements', create: '/achievements/new', edit: '/achievements/$id/edit' },
+  reward: { list: '/rewards', create: '/rewards/new', edit: '/rewards/$id/edit' },
+} as const;
 
 const emptyForm = (): FormState => ({ name: '', code: '', description: '', eventType: '', count: '1', threshold: '0', precision: '0', expiryDays: '', costCurrency: '', costAmount: '', payloadJson: '{}' });
 const createEventOption = '__create_event__';
@@ -54,14 +63,15 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('all');
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<CatalogItem | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [costMode, setCostMode] = useState<'free' | 'points'>('free');
   const [advancedPayload, setAdvancedPayload] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [dependency, setDependency] = useState<'event' | 'currency' | null>(null);
+  const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
+  const routes = catalogRoutes[kind];
 
   const refresh = useCallback(async () => {
     if (!scope) { setItems([]); setEventTypes([]); setCurrencies([]); setLoading(false); return; }
@@ -81,7 +91,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   }, [kind, scope]);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { setOpen(false); setEditing(null); setQuery(''); setFilter('all'); setForm(emptyForm()); setCostMode('free'); setDependency(null); }, [kind, scope?.tenant_id, scope?.environment_id]);
+  useEffect(() => { setQuery(''); setFilter('all'); setCostMode('free'); setDependency(null); }, [kind, scope?.tenant_id, scope?.environment_id]);
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase();
     return items.filter((item) => (filter === 'all' || item.active === (filter === 'active')) && (!term || `${item.name} ${itemDetail(kind, item)}`.toLowerCase().includes(term)))
@@ -89,9 +99,8 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   }, [filter, items, kind, query]);
 
   function update(field: keyof FormState, value: string) { setForm((current) => ({ ...current, [field]: value })); setError(null); }
-  function beginCreate() { setEditing(null); setForm(emptyForm()); setCostMode('free'); setAdvancedPayload(false); setError(null); setOpen(true); }
+  function beginCreate() { setForm(emptyForm()); setCostMode('free'); setAdvancedPayload(false); setError(null); }
   function beginEdit(item: CatalogItem) {
-    setEditing(item);
     if (kind === 'currency') {
       const currency = item as Currency;
       const expiry = currency.policy?.expiry_days;
@@ -113,8 +122,20 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
       setAdvancedPayload(Object.keys(reward.payload ?? {}).length > 0);
     }
     setError(null);
-    setOpen(true);
   }
+
+  // The route says what is open: /new creates, /$id/edit edits, the section root lists.
+  const creating = Boolean(matchRoute({ to: routes.create }));
+  const editMatch = matchRoute({ to: routes.edit });
+  const editId = editMatch ? editMatch.id : null;
+  const editing = editId ? items.find((entry) => entry.id === editId) ?? null : null;
+  const open = creating || Boolean(editing);
+  // Fill the form once per item opened, not on every refresh of the list.
+  const formFor = creating ? 'new' : editing?.id ?? null;
+  useEffect(() => {
+    if (formFor === 'new') beginCreate();
+    else if (editing) beginEdit(editing);
+  }, [formFor]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,9 +181,8 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
         const input = { ...scope, name, description: form.description.trim(), reward_type: 'digital_unlock', cost_currency: costMode === 'points' ? form.costCurrency : undefined, cost_amount: costMode === 'points' ? amount : undefined, payload };
         if (editing) await updateReward(editing.id, input); else await createReward(input);
       }
-      setOpen(false);
-      setEditing(null);
       setForm(emptyForm());
+      void navigate({ to: routes.list });
       await refresh();
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : `${copy[kind].singular} could not be created.`); }
     finally { setSaving(false); }
@@ -180,13 +200,16 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
   }
 
   const activeCount = items.filter((item) => item.active).length;
-  const closeEditor = () => { setOpen(false); setEditing(null); setError(null); };
+  const closeEditor = () => void navigate({ to: routes.list });
+  const startCreate = () => void navigate({ to: routes.create });
   return <main className={`page page-resource ${open ? 'page-narrow' : ''}`}>
-    <PageHeader breadcrumb={['Workspace', 'Loyalty', copy[kind].title, ...(open ? [editing ? 'Edit' : 'Create'] : [])]} title={open ? `${editing ? 'Edit' : 'Add'} ${copy[kind].singular}` : copy[kind].title} description={copy[kind].intro} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button> : <button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {copy[kind].singular}</button>} />
+    <PageHeader breadcrumb={['Workspace', 'Loyalty', copy[kind].title, ...(open ? [editing ? 'Edit' : 'Create'] : [])]} title={open ? `${editing ? 'Edit' : 'Add'} ${copy[kind].singular}` : copy[kind].title} description={copy[kind].intro} actions={open ? <button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button> : <button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {copy[kind].singular}</button>} />
 
-    {!open && <GuidePanel id={`guide-${kind}`} title={copy[kind].title} {...copy[kind].guide} defaultOpen={!loading && !error && items.length === 0} />}
+    {!open && !editId && <GuidePanel id={`guide-${kind}`} title={copy[kind].title} {...copy[kind].guide} defaultOpen={!loading && !error && items.length === 0} />}
 
-    {!open && <section className="panel" aria-label={`${copy[kind].title} list`}>
+    {editId && !editing && <section className="panel">{loading || !scope ? <div className="skeleton-rows" aria-label="Loading"><span /><span /><span /></div> : <div className="empty-state"><IconAlertTriangle size={22} stroke={1.5} aria-hidden="true" /><strong>This {copy[kind].singular} was not found</strong><span>It may have been removed, or it belongs to another environment.</span><button className="secondary-button" type="button" onClick={closeEditor}><IconArrowLeft size={15} stroke={1.75} />Back to list</button></div>}</section>}
+
+    {!open && !editId && <section className="panel" aria-label={`${copy[kind].title} list`}>
       <div className="toolbar">
         <p className="tally"><strong>{items.length}</strong> total <span aria-hidden="true">·</span> <strong>{activeCount}</strong> active</p>
         <div className="toolbar-controls">
@@ -196,7 +219,7 @@ export function CatalogPage({ kind }: { kind: CatalogKind }) {
         </div>
       </div>
       {error && <div className="panel-body"><p className="alert alert-error" role="alert"><IconAlertTriangle size={16} aria-hidden="true" /><span>{error}</span><button className="text-button" type="button" onClick={() => void refresh()}>Retry</button></p></div>}
-      {loading ? <div className="skeleton-rows" aria-label={`Loading ${copy[kind].title.toLowerCase()}`}><span /><span /><span /></div> : items.length === 0 ? <div className="empty-state"><IconCircleDashed size={22} stroke={1.5} aria-hidden="true" /><strong>No {copy[kind].title.toLowerCase()} yet</strong><span>{copy[kind].empty}</span><button className="primary-button" type="button" onClick={beginCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {copy[kind].singular}</button></div> : visible.length === 0 ? <div className="empty-state"><IconSearch size={20} stroke={1.5} aria-hidden="true" /><strong>No matching results</strong><span>Try another search or status filter.</span><button className="secondary-button compact" type="button" onClick={() => { setQuery(''); setFilter('all'); }}>Clear filters</button></div> : <ul className="resource-list">{visible.map((item) => <li key={item.id} className={`resource-row ${item.active ? '' : 'is-archived'}`}><div className="resource-row-main"><strong>{item.name}</strong><span>{itemDetail(kind, item)}</span>{kind === 'achievement' && (item as Achievement).description && <small>{(item as Achievement).description}</small>}{kind === 'reward' && (item as Reward).description && <small>{(item as Reward).description}</small>}</div><span className={`badge ${item.active ? 'badge-success' : 'badge-neutral'}`}><span className="dot" />{item.active ? 'Active' : 'Archived'}</span><div className="resource-row-actions"><button className="text-button" type="button" onClick={() => beginEdit(item)} aria-label={`Edit ${item.name}`}>Edit</button><button className="text-button" type="button" disabled={toggling === item.id} onClick={() => void toggle(item)} aria-label={`${item.active ? 'Archive' : 'Activate'} ${item.name}`}>{toggling === item.id ? 'Saving…' : item.active ? 'Archive' : 'Activate'}</button></div></li>)}</ul>}
+      {loading ? <div className="skeleton-rows" aria-label={`Loading ${copy[kind].title.toLowerCase()}`}><span /><span /><span /></div> : items.length === 0 ? <div className="empty-state"><IconCircleDashed size={22} stroke={1.5} aria-hidden="true" /><strong>No {copy[kind].title.toLowerCase()} yet</strong><span>{copy[kind].empty}</span><button className="primary-button" type="button" onClick={startCreate} disabled={!scope}><IconPlus size={15} stroke={1.75} />Add {copy[kind].singular}</button></div> : visible.length === 0 ? <div className="empty-state"><IconSearch size={20} stroke={1.5} aria-hidden="true" /><strong>No matching results</strong><span>Try another search or status filter.</span><button className="secondary-button compact" type="button" onClick={() => { setQuery(''); setFilter('all'); }}>Clear filters</button></div> : <ul className="resource-list">{visible.map((item) => <li key={item.id} className={`resource-row ${item.active ? '' : 'is-archived'}`}><div className="resource-row-main"><strong>{item.name}</strong><span>{itemDetail(kind, item)}</span>{kind === 'achievement' && (item as Achievement).description && <small>{(item as Achievement).description}</small>}{kind === 'reward' && (item as Reward).description && <small>{(item as Reward).description}</small>}</div><span className={`badge ${item.active ? 'badge-success' : 'badge-neutral'}`}><span className="dot" />{item.active ? 'Active' : 'Archived'}</span><div className="resource-row-actions"><Link className="text-button" to={routes.edit} params={{ id: item.id }} aria-label={`Edit ${item.name}`}>Edit</Link><button className="text-button" type="button" disabled={toggling === item.id} onClick={() => void toggle(item)} aria-label={`${item.active ? 'Archive' : 'Activate'} ${item.name}`}>{toggling === item.id ? 'Saving…' : item.active ? 'Archive' : 'Activate'}</button></div></li>)}</ul>}
     </section>}
 
     {open && <section className="panel resource-editor" aria-label={editing ? `Update ${copy[kind].singular}` : `Set up a ${copy[kind].singular}`}><form className="resource-form" onSubmit={(event) => void submit(event)}>
