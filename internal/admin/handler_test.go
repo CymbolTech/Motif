@@ -37,7 +37,6 @@ func TestAllowedRouteKeepsPlatformControlsForOpsOnly(t *testing.T) {
 	}{
 		{name: "tenant creation", method: http.MethodPost, path: "/v1/admin/tenants"},
 		{name: "plans", method: http.MethodGet, path: "/v1/admin/plans"},
-		{name: "credentials", method: http.MethodGet, path: "/v1/admin/credentials?tenant_id=tenant-a"},
 		{name: "administrator identities", method: http.MethodGet, path: "/v1/admin/admin-users"},
 	}
 	tenantAdmin := adminauth.Principal{ID: "admin_tenant", Role: adminauth.RoleTenantAdmin, TenantIDs: []string{"tenant-a"}}

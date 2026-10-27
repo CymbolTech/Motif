@@ -33,7 +33,7 @@ published rule + conditions
 | --- | --- | --- |
 | Tenant | A customer organization | You operate more than one customer or product |
 | Environment | A tenant-owned boundary such as `sandbox` or `production` | You need safe testing without mixing production state |
-| Integration credential | A server-side key scoped to one tenant/environment | Your backend sends events or reads a user state |
+| Access key | A secret (`motif_key_…`) for one environment, with scopes `read`, `write`, `edit`, `delete`, `mcp` | Your backend sends events or reads a user state; an MCP client configures the workspace |
 | External user ID | Your own stable customer ID | You want MotifEngine state to map back to your user |
 | Event | A fact that happened in your product | A customer action should be measured or cause an effect |
 | Event contract | An immutable versioned payload schema | You want malformed producer data rejected early |
@@ -64,7 +64,7 @@ Every scenario in this guide is a variation of the same eight steps.
 
 ### Step 1 — Create a tenant and environment
 
-Tenant users create their own workspace from the dashboard signup screen. Signup provisions the tenant, its first environment, a starter plan, an integration credential, and the tenant-admin membership in one flow. The equivalent REST call is public and returns a tenant session:
+Tenant users create their own workspace from the dashboard signup screen. Signup provisions the tenant, its first environment, a starter plan, and the tenant-admin membership in one flow. No access key is created at signup; create one in Step 2. The equivalent REST call is public and returns a tenant session:
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/admin/auth/signup \
@@ -95,20 +95,25 @@ curl -X POST http://127.0.0.1:18080/v1/admin/tenants \
 
 The dashboard loads the tenant and environment from the signed-in user's workspace membership. There is no workspace selector in the tenant console; catalog, rule, event, analytics, and reward operations stay inside that membership scope automatically.
 
-### Step 2 — Create a credential for the customer backend
+### Step 2 — Create an access key for the customer backend
 
-The raw integration key is returned only from create or rotate. Store it in the customer's server-side secret manager. Never put it in a browser bundle.
+Open **Workspace → Access keys** in the console, or use the API. Each key belongs to one environment and carries scopes: `read` for `GET` routes, `write` for `POST`, `edit` for `PATCH`/`PUT`, `delete` for `DELETE`, and `mcp` to use the key from an MCP client. The raw key (`motif_key_…`) is returned only once, on create, and stored only as a hash; a lost key is replaced by creating a new one. Store it in the customer's server-side secret manager. Never put it in a browser bundle: `allowed_origins` limits which websites may use a key from a browser, but requests without an `Origin` header are judged by key and scopes alone.
 
 ```bash
-curl -X POST http://127.0.0.1:18080/v1/admin/credentials \
-  -H 'Authorization: Bearer <super_admin_session>' \
+curl -X POST http://127.0.0.1:18080/v1/admin/access-keys \
+  -H 'Authorization: Bearer <tenant_or_super_admin_session>' \
   -H 'Content-Type: application/json' \
   -d '{
     "tenant_id": "acme",
     "environment_id": "sandbox",
-    "label": "acme-sandbox-backend"
+    "name": "acme-sandbox-backend",
+    "scopes": ["read", "write"],
+    "allowed_origins": [],
+    "expires_in_days": 0
   }'
 ```
+
+The `201` response contains `key` (the secret) and `access_key` (its metadata). Keys can later be edited (name, scopes, allowed origins), revoked, or deleted.
 
 ### Step 3 — Register event contracts
 
@@ -179,7 +184,7 @@ Create the rule with `POST /v1/admin/rules`, then publish it with `POST /v1/admi
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/events \
-  -H 'X-Motif-API-Key: <integration_key>' \
+  -H 'X-Motif-API-Key: <access_key>' \
   -H 'Content-Type: application/json' \
   -d '{
     "event_id": "order-1001-completed",
@@ -204,14 +209,14 @@ Check the event receipt:
 
 ```bash
 curl http://127.0.0.1:18080/v1/events/order-1001-completed \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 Then read the customer state:
 
 ```bash
 curl http://127.0.0.1:18080/v1/users/user-42/profile \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 The profile includes balances, event count, mission progress, achievement progress, and progression. Use `/points/transactions` for the ledger and `/progression` for a focused XP response.
@@ -381,7 +386,7 @@ The customer backend redeems it:
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/rewards/<reward_id>/redemptions \
-  -H 'X-Motif-API-Key: <integration_key>' \
+  -H 'X-Motif-API-Key: <access_key>' \
   -H 'Content-Type: application/json' \
   -d '{
     "external_user_id": "user-42",
@@ -420,7 +425,7 @@ The same transaction shape is available to the trusted customer backend at `POST
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/users/user-42/points/transactions \
-  -H 'X-Motif-API-Key: <integration_key>' \
+  -H 'X-Motif-API-Key: <access_key>' \
   -H 'Content-Type: application/json' \
   -d '{
     "currency":"loyalty",
@@ -602,7 +607,7 @@ Send one event per active day, such as `lesson.completed`, and read:
 
 ```bash
 curl 'http://127.0.0.1:18080/v1/users/user-42/streaks?event_type=lesson.completed' \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 The response includes `current_streak`, `longest_streak`, and `last_active_date`. Streak calculation uses UTC calendar dates and is a read model; it does not itself award points.
@@ -769,7 +774,7 @@ Conversion is an explicit atomic operation, not a rule action. Both currencies m
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/points/conversions \
-  -H 'X-Motif-API-Key: <integration_key>' \
+  -H 'X-Motif-API-Key: <access_key>' \
   -H 'Content-Type: application/json' \
   -d '{
     "external_user_id":"user-42",
@@ -788,10 +793,10 @@ The integer result is `source_amount * rate_numerator / rate_denominator`, round
 
 ```bash
 curl http://127.0.0.1:18080/v1/users/user-42/points \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 
 curl 'http://127.0.0.1:18080/v1/users/user-42/points/transactions?limit=20' \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 Transactions are cursor-paginated and include amount, entry type, balance after, provenance, and idempotency key. The profile endpoint combines balances, missions, achievements, and progression for a single user view.
@@ -819,7 +824,7 @@ For a failed or interrupted redemption, call:
 
 ```bash
 curl -X POST http://127.0.0.1:18080/v1/redemptions/<redemption_id>/retry \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 Operators can use **Overview → Redemptions** or `POST /v1/admin/redemptions/retry`, then inspect `GET /v1/admin/redemptions/{id}/attempts`. Never create a second redemption just because the first provider call timed out; retry the durable redemption ID.
@@ -859,7 +864,7 @@ Your backend reads the same URL every time:
 
 ```bash
 curl 'http://127.0.0.1:18080/v1/leaderboards/weekly?limit=10' \
-  -H 'X-Motif-API-Key: <integration_key>'
+  -H 'X-Motif-API-Key: <access_key>'
 ```
 
 The response carries the round's name, start, end, and status with the ranked entries. When no round is running it returns the last round with `status: "ended"`, so a page between two rounds shows final standings, and `next_round` announces a scheduled round. Use `?round=previous` for the last finished round or `?round=12` for a specific one, `GET /v1/leaderboards/weekly/rounds` for history with each round's leader, and `GET /v1/users/{id}/leaderboards` for one user's rank on every active board. Ranks are unique: a higher score ranks first, then whoever reached the score first.
@@ -956,7 +961,7 @@ Assignment is deterministic from tenant, experiment ID, and external user ID. Re
 
 ### 14.1 Direct REST integration
 
-The customer's backend sends events with a tenant/environment-scoped integration key. For example, a completed order can be sent with the platform's versioned REST API:
+The customer's backend sends events with an access key of the environment that has the `write` scope. For example, a completed order can be sent with the platform's versioned REST API:
 
 ```sh
 curl -X POST "$MOTIF_API_URL/v1/events" \
@@ -969,7 +974,7 @@ The `202 Accepted` receipt confirms durable acceptance, not completed rule proce
 
 ### 14.2 HTTP client choice
 
-The same contract works with `curl`, TypeScript `fetch`, Go `net/http`, Python, or any backend HTTP client. MotifEngine does not publish an official language SDK. Keep the integration key in a server-side secret store. Use `occurred_at` when the business event happened earlier than the API call and you need accurate analytics or streak dates.
+The same contract works with `curl`, TypeScript `fetch`, Go `net/http`, Python, or any backend HTTP client. MotifEngine does not publish an official language SDK. Keep the access key in a server-side secret store. Use `occurred_at` when the business event happened earlier than the API call and you need accurate analytics or streak dates.
 
 ### 14.3 Customer-facing UI
 
@@ -979,27 +984,27 @@ MotifEngine returns state; the customer product renders it. For a loyalty screen
 
 ### 14.1 Super Admin versus Tenant Admin
 
-- **Super Admin:** is an internal platform role for the Ops service. It creates tenants and environments, manages credentials, plans, administrator identities, and platform-wide controls.
-- **Tenant Admin:** creates or joins a workspace through the tenant dashboard and can operate scoped catalog, event, rule, reward, provider, engagement, and audit resources. The dashboard never asks this user to choose a tenant.
-- **Integration credential:** is for a customer backend, not for dashboard administration.
+- **Super Admin:** is an internal platform role for the Ops service. It creates tenants and environments, manages plans, administrator identities, and platform-wide controls.
+- **Tenant Admin:** creates or joins a workspace through the tenant dashboard and can operate scoped catalog, event, rule, reward, provider, engagement, access key, and audit resources. The dashboard never asks this user to choose a tenant.
+- **Access key:** is for a customer backend or an MCP client, not for dashboard administration. Keys cannot manage keys, reward providers, point transactions, or redemptions through the admin API.
 
-The backend enforces this boundary. A client-provided `tenant_id` is not proof of access; the authenticated session or credential must authorize the scope.
+The backend enforces this boundary. A client-provided `tenant_id` is not proof of access; the authenticated session or access key must authorize the scope.
 
 ### 14.2 Environment separation
 
-Use `sandbox` for test events and `production` for live events. Credentials, rules, currencies, user balances, and rewards are environment-scoped. Do not reuse a sandbox key in production.
+Use `sandbox` for test events and `production` for live events. Access keys, rules, currencies, user balances, and rewards are environment-scoped. Do not reuse a sandbox key in production.
 
-### 14.3 Rotate or revoke a credential
+### 14.3 Replace or revoke an access key
 
-Create a new credential, deploy it, verify events, then revoke the old credential. The raw key is never returned from list or audit endpoints.
+Create a new key, deploy it, verify events, then revoke or delete the old key. A revoked key stops working and stays listed; a deleted key is removed. The raw key is never returned from list or audit endpoints.
 
 ### 14.4 Suspend a tenant
 
-Suspending a tenant blocks its integration routes, including events, points, conversions, and reward operations. This is useful during an incident or credential investigation.
+Suspending a tenant blocks its integration routes, including events, points, conversions, and reward operations. This is useful during an incident or access key investigation.
 
 ### 14.5 Audit and diagnostics
 
-Every important platform mutation is audit logged. Use **Settings → Audit** or `GET /v1/admin/audit-log` to answer who changed a tenant, credential, event contract, rule, catalog entry, plan, or provider. Use diagnostics for queue and failure counts; use rule-execution and redemption feeds for the individual record.
+Every important platform mutation is audit logged. Use **Settings → Audit** or `GET /v1/admin/audit-log` to answer who changed a tenant, access key, event contract, rule, catalog entry, plan, or provider. Use diagnostics for queue and failure counts; use rule-execution and redemption feeds for the individual record.
 
 ### 14.6 Health and metrics
 
@@ -1065,7 +1070,7 @@ Alert on readiness failures, sustained API error counters, failed rule execution
 | “Compare two experiences” | Deterministic experiment report + customer-owned variant delivery |
 | “See why a reward failed” | Diagnostics + redemption attempts + provider status/retry |
 | “Stop a tenant temporarily” | Super Admin tenant suspension |
-| “Keep test data away from live data” | Separate environments and credentials |
+| “Keep test data away from live data” | Separate environments, each with its own access keys |
 
 ## 18. Current boundaries and unsupported assumptions
 
@@ -1090,7 +1095,7 @@ The following statements are intentionally explicit so a scenario is not designe
 Before enabling a scenario in production:
 
 - [ ] A tenant and the intended environment exist.
-- [ ] A dedicated integration credential is stored server-side.
+- [ ] A dedicated access key with only the scopes the backend needs is stored server-side.
 - [ ] Event names and payload schemas are registered.
 - [ ] Every producer event has a stable unique `event_id`.
 - [ ] `user_id` is the customer's stable external ID and is present for user-level effects.

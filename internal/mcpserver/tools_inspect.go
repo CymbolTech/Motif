@@ -10,21 +10,21 @@ import (
 )
 
 type environmentInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 }
 
 type listCatalogInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Kind        string `json:"kind" jsonschema:"Which catalog to list"`
 }
 
 type listRulesInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	RuleID      string `json:"rule_id,omitempty" jsonschema:"Return every version of this rule instead of the rule list"`
 }
 
 type checkRuleInput struct {
-	Environment   string           `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment   string           `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	EventType     string           `json:"event_type" jsonschema:"The event type the rule listens to, for example order.completed"`
 	Conditions    map[string]any   `json:"conditions,omitempty" jsonschema:"Condition expression with exactly one operator per object: all, any, exists, eq, neq, gt, gte, lt, lte. Paths look like $.total. Omit to match every event"`
 	Actions       []map[string]any `json:"actions" jsonschema:"Ordered actions: {type: award_xp, amount}, {type: award_points, currency, amount} or {type: log, message}"`
@@ -34,18 +34,18 @@ type checkRuleInput struct {
 }
 
 type eventTraceInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	EventID     string `json:"event_id" jsonschema:"The event_id the producer sent"`
 }
 
 type listEventsInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Status      string `json:"status,omitempty" jsonschema:"Only events with this status"`
 	Limit       int    `json:"limit,omitempty" jsonschema:"At most this many events, newest first (default 20, maximum 100)"`
 }
 
 type userStateInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	UserID      string `json:"user_id" jsonschema:"The external user id the product sends as user_id"`
 }
 
@@ -67,7 +67,7 @@ func readOnly(title string) *mcp.ToolAnnotations {
 func registerInspectTools(server *mcp.Server, session *Session) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_workspace",
-		Description: "Start here. Returns the workspace this token belongs to, the environments it can use, its permissions, plan usage, processing health per environment, and the URLs a backend integration needs.",
+		Description: "Start here. Returns the workspace this access key belongs to, the environment it can use, its scopes, plan usage, processing health per environment, and the URLs a backend integration needs.",
 		Annotations: readOnly("Workspace overview"),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		usage, err := session.Client.Get(ctx, "/v1/admin/usage", url.Values{"tenant_id": {session.TenantID}})
@@ -87,13 +87,13 @@ func registerInspectTools(server *mcp.Server, session *Session) {
 		}
 		return nil, map[string]any{
 			"workspace":           map[string]any{"name": session.Workspace, "status": session.Status},
-			"token":               map[string]any{"id": session.TokenID, "scopes": session.Scopes, "created_by": session.Email},
+			"access_key":          map[string]any{"id": session.TokenID, "scopes": session.Scopes, "created_by": session.Email},
 			"environments":        session.Environments,
 			"plan_usage":          usage,
 			"health":              health,
 			"console_url":         session.ConsoleURL,
 			"integration_api_url": session.PublicAPIURL,
-			"how_this_fits":       "This server configures and inspects the workspace. The product's own backend sends real events to integration_api_url with the environment's REST integration key (X-Motif-API-Key), which a workspace administrator copies from the console; never put that key in client-side code.",
+			"how_this_fits":       "This server configures and inspects the workspace. The product's own backend sends real events to integration_api_url with an access key in X-Motif-API-Key, which a workspace administrator creates under Access keys in the console with the read and write scopes; never put that key in client-side code.",
 		}, nil
 	})
 

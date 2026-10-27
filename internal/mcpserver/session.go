@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	scopeRead    = "read"
-	scopeWrite   = "write"
-	scopePublish = "publish"
+	scopeRead   = "read"
+	scopeWrite  = "write"
+	scopeEdit   = "edit"
+	scopeDelete = "delete"
+	scopeMCP    = "mcp"
 )
 
 type Environment struct {
@@ -26,8 +28,8 @@ type Environment struct {
 	Name string `json:"name"`
 }
 
-// Session is what one access token may do: its workspace, environments and
-// scopes, plus a client that calls the API with that token.
+// Session is what one access key may do: its workspace, its environment and
+// scopes, plus a client that calls the API with that key.
 type Session struct {
 	Client       *Client
 	TenantID     string
@@ -58,7 +60,7 @@ func (s *Session) Environment(requested string) (string, error) {
 		return "", fmt.Errorf("choose an environment: one of %s", strings.Join(ids, ", "))
 	}
 	if !slices.Contains(ids, requested) {
-		return "", fmt.Errorf("environment %q is not available to this token; use one of %s", requested, strings.Join(ids, ", "))
+		return "", fmt.Errorf("environment %q is not available to this access key; use %s", requested, strings.Join(ids, ", "))
 	}
 	return requested, nil
 }
@@ -77,7 +79,7 @@ func (s *Session) Body(environmentID string, fields map[string]any) map[string]a
 	return body
 }
 
-// Resolver turns a bearer token into a Session by asking the API who it is.
+// Resolver turns a bearer access key into a Session by asking the API who it is.
 // Results are cached briefly so a burst of tool calls costs one lookup.
 type Resolver struct {
 	APIURL       string
@@ -97,7 +99,10 @@ type cachedSession struct {
 
 const maxCachedSessions = 1024
 
-var errNotAccessToken = errors.New("use a workspace access token (motif_at_…) created under Access tokens in the console")
+var (
+	errNotAccessKey = errors.New("use an access key (motif_key_…) created under Access keys in the console")
+	errNoMCPScope   = errors.New("this access key does not have the MCP scope; edit it under Access keys in the console")
+)
 
 type principal struct {
 	ID             string   `json:"id"`
@@ -122,8 +127,9 @@ type environmentRow struct {
 
 func (r *Resolver) Resolve(ctx context.Context, token string) (*Session, error) {
 	token = strings.TrimSpace(token)
-	if !strings.HasPrefix(token, "motif_at_") {
-		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNotAccessToken)
+	// Keys migrated from access tokens keep the motif_at_ prefix.
+	if !strings.HasPrefix(token, "motif_key_") && !strings.HasPrefix(token, "motif_at_") {
+		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNotAccessKey)
 	}
 	key := sha256.Sum256([]byte(token))
 	now := time.Now()
@@ -139,12 +145,18 @@ func (r *Resolver) Resolve(ctx context.Context, token string) (*Session, error) 
 	if err := client.Do(ctx, http.MethodGet, "/v1/admin/auth/me", nil, nil, &who); err != nil {
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusUnauthorized {
-			return nil, fmt.Errorf("%w: the token is invalid, expired or revoked", auth.ErrInvalidToken)
+			return nil, fmt.Errorf("%w: the access key is invalid, expired or revoked", auth.ErrInvalidToken)
+		}
+		if errors.As(err, &apiErr) && apiErr.Status == http.StatusForbidden {
+			return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNoMCPScope)
 		}
 		return nil, err
 	}
-	if who.Source != "access_token" || len(who.TenantIDs) != 1 {
-		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNotAccessToken)
+	if who.Source != "access_key" || len(who.TenantIDs) != 1 {
+		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNotAccessKey)
+	}
+	if !slices.Contains(who.Scopes, scopeMCP) {
+		return nil, fmt.Errorf("%w: %w", auth.ErrInvalidToken, errNoMCPScope)
 	}
 	session := &Session{
 		Client: client, TenantID: who.TenantIDs[0], Email: who.Email, TokenID: who.TokenID, Scopes: who.Scopes,

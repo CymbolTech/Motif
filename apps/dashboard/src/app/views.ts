@@ -15,7 +15,7 @@ export const viewPaths = {
   campaign: '/campaigns',
   leaderboard: '/leaderboards',
   analyze: '/reports',
-  access: '/access-tokens',
+  access: '/access-keys',
 } as const satisfies Record<View, string>;
 
 export function viewFromPath(pathname: string): View {

@@ -87,7 +87,7 @@ public-health: ## Check the console, API, landing page and docs through their pu
 	@curl --fail --silent --show-error "$(MOTIF_CONSOLE_URL)/api/health/ready" >/dev/null
 	@curl --fail --silent --show-error "$(MOTIF_MARKETING_URL)/" >/dev/null
 	@curl --fail --silent --show-error "$(MOTIF_MARKETING_URL)/docs" >/dev/null
-	@test "$$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "$(MOTIF_CONSOLE_URL)/mcp")" = 401 || (echo "$(MOTIF_CONSOLE_URL)/mcp should ask for an access token"; exit 1)
+	@test "$$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST "$(MOTIF_CONSOLE_URL)/mcp")" = 401 || (echo "$(MOTIF_CONSOLE_URL)/mcp should ask for an access key"; exit 1)
 	@echo "Public URLs respond: $(MOTIF_CONSOLE_URL) and $(MOTIF_MARKETING_URL)."
 
 production-env-check: ## Validate required production secrets and URLs

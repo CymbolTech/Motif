@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/motifengine/motifengine/internal/admin"
 	"github.com/motifengine/motifengine/internal/adminauth"
+	"github.com/motifengine/motifengine/internal/auth"
 	"github.com/motifengine/motifengine/internal/bootstrap"
 	"github.com/motifengine/motifengine/internal/config"
 	"github.com/motifengine/motifengine/internal/events"
@@ -50,7 +51,7 @@ func run(logger *slog.Logger) error {
 	if err := db.Ping(pctx); err != nil {
 		return err
 	}
-	if err := bootstrap.EnsureIntegrationCredential(pctx, db, cfg.BootstrapTenant, cfg.BootstrapEnv, cfg.BootstrapAPIKey); err != nil {
+	if err := bootstrap.EnsureAccessKey(pctx, db, cfg.BootstrapTenant, cfg.BootstrapEnv, cfg.BootstrapAPIKey); err != nil {
 		return err
 	}
 	if err := bootstrap.EnsureSuperAdmin(pctx, db, cfg.AdminEmail, cfg.AdminPassword); err != nil {
@@ -72,12 +73,17 @@ func run(logger *slog.Logger) error {
 		Database: func() error { return db.Ping(context.Background()) },
 		NATS:     func() error { return nc.FlushTimeout(2 * time.Second) },
 	}))
-	eventHandler := events.NewHandler(db, metrics)
+	// Every REST integration route needs an access key with the scope its
+	// method calls for; auth.IsIntegrationPath must list each of them.
+	keyed := func(handler http.Handler) http.Handler {
+		return auth.RequireKey(func(ctx context.Context, raw string) (auth.Key, error) { return auth.LookupKey(ctx, db, raw) }, handler)
+	}
+	eventHandler := keyed(events.NewHandler(db, metrics))
 	mux.Handle("/v1/events", eventHandler)
 	mux.Handle("/v1/events/", eventHandler)
-	mux.Handle("/v1/users/", points.NewHandler(db))
-	mux.Handle("/v1/points/conversions", points.NewConversionHandler(db))
-	leaderboardHandler := leaderboards.NewHandler(db)
+	mux.Handle("/v1/users/", keyed(points.NewHandler(db)))
+	mux.Handle("/v1/points/conversions", keyed(points.NewConversionHandler(db)))
+	leaderboardHandler := keyed(leaderboards.NewHandler(db))
 	mux.Handle("/v1/leaderboards", leaderboardHandler)
 	mux.Handle("/v1/leaderboards/", leaderboardHandler)
 	rewardProvider := rewards.NewProvider(rewards.ProviderConfig{
@@ -88,13 +94,13 @@ func run(logger *slog.Logger) error {
 		Timeout:   time.Duration(cfg.RewardProviderTimeoutSeconds) * time.Second,
 	})
 	rewardResolver := rewards.ScopeProviderResolver{Store: rewards.NewConfigStore(db, cfg.RewardProviderEncryptionKey), Fallback: rewardProvider}
-	rewardHandler := rewards.NewHandlerWithResolver(db, rewardResolver, metrics)
+	rewardHandler := keyed(rewards.NewHandlerWithResolver(db, rewardResolver, metrics))
 	mux.Handle("/v1/rewards/", rewardHandler)
 	mux.Handle("/v1/redemptions/", rewardHandler)
 	mux.Handle("/v1/admin/", admin.NewHandlerWithProviderConfig(db, cfg.AdminAPIKey, adminauth.NewStore(db), rewards.NewConfigStore(db, cfg.RewardProviderEncryptionKey)))
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           transport.Protect(mux, transport.ProtectionConfig{Logger: logger, AllowedOrigins: cfg.CORSOrigins, Limiter: transport.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst), Metrics: metrics}),
+		Handler:           transport.Protect(mux, transport.ProtectionConfig{Logger: logger, AllowedOrigins: cfg.CORSOrigins, Limiter: transport.NewRateLimiter(cfg.RateLimitRPS, cfg.RateLimitBurst), Metrics: metrics, KeyCORS: auth.IsIntegrationPath}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

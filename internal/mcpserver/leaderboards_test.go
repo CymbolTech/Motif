@@ -6,30 +6,38 @@ import (
 	"testing"
 )
 
-func TestLeaderboardToolsFollowTheTokenScopes(t *testing.T) {
-	reader, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_at_valid")
-	if err != nil {
-		t.Fatal(err)
+func TestLeaderboardToolsFollowTheKeyScopes(t *testing.T) {
+	cases := []struct {
+		scopes        []string
+		want, without []string
+	}{
+		{[]string{"read"}, []string{"get_leaderboard"}, []string{"create_leaderboard", "end_leaderboard_round", "delete_leaderboard"}},
+		{[]string{"read", "write"}, []string{"create_leaderboard", "start_leaderboard_round"}, []string{"update_leaderboard_round", "end_leaderboard_round", "delete_leaderboard"}},
+		{[]string{"read", "edit"}, []string{"update_leaderboard_round", "end_leaderboard_round"}, []string{"create_leaderboard", "delete_leaderboard"}},
+		{[]string{"read", "delete"}, []string{"delete_leaderboard"}, []string{"create_leaderboard", "end_leaderboard_round"}},
 	}
-	names := toolNames(t, reader)
-	if !slices.Contains(names, "get_leaderboard") || slices.Contains(names, "create_leaderboard") || slices.Contains(names, "end_leaderboard_round") {
-		t.Fatalf("read-only tools = %v, want get_leaderboard only", names)
-	}
-	writer, err := connect(t, &fakeAPI{scopes: []string{"read", "write"}}, "motif_at_valid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	names = toolNames(t, writer)
-	for _, want := range []string{"create_leaderboard", "start_leaderboard_round", "update_leaderboard_round", "end_leaderboard_round", "delete_leaderboard"} {
-		if !slices.Contains(names, want) {
-			t.Fatalf("write tools %v are missing %s", names, want)
+	for _, testCase := range cases {
+		session, err := connect(t, &fakeAPI{scopes: testCase.scopes}, "motif_key_valid")
+		if err != nil {
+			t.Fatal(err)
+		}
+		names := toolNames(t, session)
+		for _, want := range testCase.want {
+			if !slices.Contains(names, want) {
+				t.Errorf("scopes %v: tools %v are missing %s", testCase.scopes, names, want)
+			}
+		}
+		for _, hidden := range testCase.without {
+			if slices.Contains(names, hidden) {
+				t.Errorf("scopes %v should not see %s", testCase.scopes, hidden)
+			}
 		}
 	}
 }
 
 func TestCreateLeaderboardSendsMetricAndSchedule(t *testing.T) {
 	api := &fakeAPI{scopes: []string{"read", "write"}, environments: []string{"sandbox"}}
-	session, err := connect(t, api, "motif_at_valid")
+	session, err := connect(t, api, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +62,8 @@ func TestCreateLeaderboardSendsMetricAndSchedule(t *testing.T) {
 }
 
 func TestRoundToolsDefaultToTheRunningRound(t *testing.T) {
-	api := &fakeAPI{scopes: []string{"read", "write"}, environments: []string{"sandbox"}}
-	session, err := connect(t, api, "motif_at_valid")
+	api := &fakeAPI{scopes: []string{"read", "edit"}, environments: []string{"sandbox"}}
+	session, err := connect(t, api, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +92,7 @@ func TestRoundToolsDefaultToTheRunningRound(t *testing.T) {
 
 func TestUserStateIncludesLeaderboardRanks(t *testing.T) {
 	api := &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}
-	session, err := connect(t, api, "motif_at_valid")
+	session, err := connect(t, api, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,8 +105,8 @@ func TestUserStateIncludesLeaderboardRanks(t *testing.T) {
 }
 
 func TestDeleteLeaderboardSendsAScopedDelete(t *testing.T) {
-	api := &fakeAPI{scopes: []string{"read", "write"}, environments: []string{"sandbox"}}
-	session, err := connect(t, api, "motif_at_valid")
+	api := &fakeAPI{scopes: []string{"read", "delete"}, environments: []string{"sandbox"}}
+	session, err := connect(t, api, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}

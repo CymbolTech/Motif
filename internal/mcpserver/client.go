@@ -14,7 +14,7 @@ import (
 // ClientHeader marks requests from this server so audit entries can name the client.
 const ClientHeader = "X-Motif-Client"
 
-// Client calls the MotifEngine admin API with the caller's access token. The
+// Client calls the MotifEngine admin API with the caller's access key. The
 // API authorizes every request itself; this server never widens access.
 type Client struct {
 	baseURL string
@@ -48,9 +48,9 @@ func (e *APIError) Error() string {
 func (e *APIError) hint() string {
 	switch {
 	case e.Status == http.StatusUnauthorized:
-		return "The access token is invalid, expired or revoked; ask a workspace administrator for a new one from Access tokens in the console"
+		return "The access key is invalid, expired or revoked; ask a workspace administrator for a new one under Access keys in the console"
 	case e.Status == http.StatusForbidden:
-		return "This token may lack the permission (write or publish) or the environment this needs; do not retry with the same token"
+		return "This access key may lack the scope (write, edit or delete) or the environment this needs; do not retry with the same key"
 	case e.Status == http.StatusTooManyRequests:
 		return "Wait a second before retrying"
 	case e.Code == "plan_limit_exceeded":
@@ -133,7 +133,7 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 	return decoder.Decode(out)
 }
 
-// Scrub removes workspace identifiers from API output. An access token is
+// Scrub removes workspace identifiers from API output. An access key is
 // bound to one workspace, so the identifier adds nothing for the assistant.
 func Scrub(value any) any {
 	switch typed := value.(type) {

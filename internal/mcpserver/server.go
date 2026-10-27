@@ -1,7 +1,7 @@
 // Package mcpserver exposes MotifEngine to MCP clients for configuring and
 // inspecting a workspace. It is a thin client of the admin API: every call
-// carries the caller's access token, and the API enforces the token's
-// workspace, environments and scopes. Events from a product backend keep
+// carries the caller's access key, and the API enforces the key's
+// workspace, environment and scopes. Events from a product backend keep
 // flowing over REST; this server is never that path.
 package mcpserver
 
@@ -27,7 +27,8 @@ type Options struct {
 }
 
 // NewServer builds the MCP server for one session. It only registers the tools
-// the token's scopes allow, so a read-only token never sees write tools.
+// the key's scopes allow: read inspects, write creates, edit changes what
+// exists (including publishing rules), and delete removes.
 func NewServer(session *Session, opts Options, cache *mcp.SchemaCache) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "motifengine", Title: "MotifEngine", Version: opts.Version}, &mcp.ServerOptions{
 		Instructions: instructions(session),
@@ -40,8 +41,11 @@ func NewServer(session *Session, opts Options, cache *mcp.SchemaCache) *mcp.Serv
 	if session.Can(scopeWrite) {
 		registerConfigureTools(server, session)
 	}
-	if session.Can(scopePublish) {
-		registerPublishTools(server, session)
+	if session.Can(scopeEdit) {
+		registerEditTools(server, session)
+	}
+	if session.Can(scopeDelete) {
+		registerLeaderboardDeleteTool(server, session)
 	}
 	registerPrompts(server, session)
 	return server
@@ -52,14 +56,14 @@ func instructions(session *Session) string {
 	for _, environment := range session.Environments {
 		environments = append(environments, environment.ID)
 	}
-	return fmt.Sprintf(`MotifEngine is an event-driven engagement and loyalty engine. A product backend sends trusted events over REST with an integration key; published rules turn them into XP, points and log entries; missions and achievements track progress; leaderboards rank what users earn per round; rewards are redeemed by the product backend.
+	return fmt.Sprintf(`MotifEngine is an event-driven engagement and loyalty engine. A product backend sends trusted events over REST with an access key; published rules turn them into XP, points and log entries; missions and achievements track progress; leaderboards rank what users earn per round; rewards are redeemed by the product backend.
 
-This server configures and inspects the %q workspace (environments: %s; permissions: %s). Start with get_workspace, and read_docs when unsure. Rules read only the current event payload. Run check_rule with realistic sample payloads before saving a draft, ask the human before publish_rule, and prove changes with send_test_event and get_event_trace. Test events award real points in their environment, so prefer a non-production environment and test user ids. Ask before ending a leaderboard round or deleting a leaderboard; neither can be undone. Never put the integration key in client-side code.`,
+This server configures and inspects the %q workspace (environments: %s; permissions: %s). Start with get_workspace, and read_docs when unsure. Rules read only the current event payload. Run check_rule with realistic sample payloads before saving a draft, ask the human before publish_rule, and prove changes with send_test_event and get_event_trace. Test events award real points in their environment, so prefer a non-production environment and test user ids. Ask before ending a leaderboard round or deleting a leaderboard; neither can be undone. Never put an access key in client-side code.`,
 		session.Workspace, strings.Join(environments, ", "), strings.Join(session.Scopes, ", "))
 }
 
 // NewHTTPHandler serves the MCP endpoint over stateless Streamable HTTP with
-// JSON responses. Requests need a workspace access token as a bearer token.
+// JSON responses. Requests need an access key with the MCP scope as a bearer token.
 func NewHTTPHandler(opts Options) http.Handler {
 	resolver := &Resolver{APIURL: opts.APIURL, ConsoleURL: opts.ConsoleURL, PublicAPIURL: opts.PublicAPIURL, HTTPClient: opts.HTTPClient}
 	cache := mcp.NewSchemaCache()
@@ -85,7 +89,7 @@ func RunStdio(ctx context.Context, opts Options, token string) error {
 	session, err := resolver.Resolve(ctx, token)
 	if err != nil {
 		if errors.Is(err, auth.ErrInvalidToken) {
-			return fmt.Errorf("MOTIF_ACCESS_TOKEN was rejected: %w", err)
+			return fmt.Errorf("MOTIF_ACCESS_KEY was rejected: %w", err)
 		}
 		return err
 	}

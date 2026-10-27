@@ -16,7 +16,7 @@ const navGroups: NavGroup[] = [
   { label: 'Loyalty', items: [{ label: 'Currencies', icon: IconCoin, view: 'currency' }, { label: 'Levels', icon: IconTrophy, view: 'level' }, { label: 'Missions', icon: IconFlag, view: 'mission' }, { label: 'Achievements', icon: IconSparkles, view: 'achievement' }, { label: 'Rewards', icon: IconGift, view: 'reward' }] },
   { label: 'Engagement', items: [{ label: 'Goals', icon: IconTarget, view: 'goal' }, { label: 'Campaigns', icon: IconCalendarEvent, view: 'campaign' }, { label: 'Leaderboards', icon: IconListNumbers, view: 'leaderboard' }] },
   { label: 'Analyze', items: [{ label: 'Reports', icon: IconChartBar, view: 'analyze' }] },
-  { label: 'Workspace', items: [{ label: 'Access tokens', icon: IconKey, view: 'access' }] },
+  { label: 'Workspace', items: [{ label: 'Access keys', icon: IconKey, view: 'access' }] },
 ];
 
 export function ConsoleShell() {

@@ -1,16 +1,18 @@
 # Integrate a customer backend through REST
 
-MotifEngine accepts events and serves user state through a versioned HTTP API. Your trusted backend calls it with an integration key scoped to one tenant and environment. Keep that key in a server-side secret store; never send it to a browser or mobile app. The [OpenAPI description](../api/openapi.yaml) lists request and response shapes. The dashboard is for configuring event contracts, currencies, and rules; it is not needed on the runtime request path.
+MotifEngine accepts events and serves user state through a versioned HTTP API. Your trusted backend calls it with an access key that belongs to one environment of your workspace. Keep that key in a server-side secret store; never send it to a browser or mobile app. The [OpenAPI description](../api/openapi.yaml) lists request and response shapes. The dashboard is for configuring event contracts, currencies, and rules; it is not needed on the runtime request path.
 
 ## 1. Configure the behavior
 
 In the tenant workspace, register the `order.completed` event and its payload fields. Create a `coins` currency if it does not exist. Create and publish a rule whose event is `order.completed` and whose ordered outcomes award XP and coins. These definitions can be created in the configuration flow before the backend starts sending events.
 
-Use a separate integration key for each tenant/environment. The local bootstrap key is for development only. Tenant administrators can manage configuration in their authorized scope; integration keys cannot administer tenants or rules.
+Create an access key for the environment under **Workspace → Access keys** in the console. No key exists until a workspace admin creates one. Give the backend only the scopes it needs: `GET` routes need `read`, `POST` needs `write`, `PATCH`/`PUT` need `edit` and `DELETE` needs `delete`. The secret (`motif_key_…`) is shown once and stored only as a hash; if it is lost, create a new key and revoke or delete the old one. A key can optionally list allowed origins (`https://shop.example.com`); browser requests from other origins get `403 origin_not_allowed`. Origins only bind browsers, so a key that can write must never be put in a web page.
+
+Use separate keys for each environment. The local bootstrap key is for development only. Workspace administrators manage configuration in the console; access keys cannot manage other keys, reward providers, point transactions or redemptions through the admin API.
 
 ## 2. Send one business fact
 
-Set `MOTIF_API_URL` to the API origin and `MOTIF_API_KEY` to a scoped integration key in your backend environment. The examples use one stable event ID for one completed order.
+Set `MOTIF_API_URL` to the API origin and `MOTIF_API_KEY` to an access key with the `read` and `write` scopes in your backend environment. The examples use one stable event ID for one completed order.
 
 ### curl
 
@@ -99,7 +101,7 @@ After processing, read the customer's profile or point balance from your backend
 | Timeout or transient `5xx` | Retry with backoff and the **same** `event_id` and payload. Check event status if the first response may have been lost. |
 | `429` | Back off and honor `Retry-After` if present; keep the event ID stable. |
 | `409 event_id_conflict` | Stop and investigate: that ID was previously accepted with different content. |
-| `401` or `403` | Check the server-side credential and its tenant/environment scope; do not retry unchanged credentials indefinitely. |
+| `401` or `403` | `401 missing_api_key` or `invalid_api_key` means the key is absent, unknown, revoked or expired; `403 insufficient_scope` means it lacks the scope for that method; `403 origin_not_allowed` means a browser origin is not listed on the key. Fix the key or its environment; do not retry unchanged requests indefinitely. |
 | `4xx` validation error | Correct the event type, schema, or payload before sending a new request. |
 
 An event ID identifies one business fact, such as the completion of order `123`. Do not generate a fresh ID on every HTTP retry. Redemption requests use their own stable `idempotency_key`. Never treat an accepted event as proof that every downstream action has finished; check the event status and, when needed, the resulting user state. See the [event API guide](../../Docs/api/events.md) for receipt and deduplication details.
@@ -110,11 +112,11 @@ Use [OpenAPI](../api/openapi.yaml) as the machine-readable API reference and gen
 
 ## Configure from an MCP client
 
-Coding tools that speak the Model Context Protocol can configure and inspect a workspace through the MCP endpoint on the console origin, `https://<console-domain>/mcp`. Create a workspace access token under **Access tokens** in the console, choose its permissions (`read`, `write`, `publish`) and environments, and add it as a bearer header:
+Coding tools that speak the Model Context Protocol can configure and inspect a workspace through the MCP endpoint on the console origin, `https://<console-domain>/mcp`. Create an access key under **Workspace → Access keys** in the console with the `mcp` scope plus the scopes the client needs (`read` to inspect, `write` to create, `edit` to change and publish, `delete` to delete leaderboards), and add it as a bearer header:
 
 ```sh
 claude mcp add --transport http motif https://<console-domain>/mcp \
-  --header "Authorization: Bearer motif_at_…"
+  --header "Authorization: Bearer motif_key_…"
 ```
 
-The endpoint offers tools to inspect the workspace, register event contracts, create catalog items, check and draft rules, publish with the `publish` permission, send test events and trace them, plus integration snippets and the product documentation. It never handles integration keys, point transactions or redemptions: customer services keep sending events over REST with their integration key.
+The endpoint offers tools to inspect the workspace, register event contracts, create catalog items, check and draft rules, publish with the `edit` scope, send test events and trace them, plus integration snippets and the product documentation. It never handles access keys, point transactions or redemptions: customer services keep sending events over REST with their access key. A key without the `mcp` scope only reaches the REST API.

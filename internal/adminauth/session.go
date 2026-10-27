@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/motifengine/motifengine/internal/auth"
 )
 
 const (
@@ -35,8 +36,8 @@ type Principal struct {
 	Role      string
 	TenantIDs []string
 	Source    string
-	// Access-token principals carry the token's identity, scopes and optional
-	// environment allow-list. They are always confined to one tenant.
+	// Access-key principals carry the key's id, scopes and environment. They
+	// are always confined to one tenant and one environment.
 	TokenID        string
 	Scopes         []string
 	EnvironmentIDs []string
@@ -265,8 +266,8 @@ func (s *Store) principal(ctx context.Context, id, email, role string) (Principa
 func FromRequest(ctx context.Context, store *Store, r *http.Request, bootstrapKey string) (Principal, error) {
 	if header := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(strings.ToLower(header), "bearer ") {
 		token := strings.TrimSpace(header[len("Bearer "):])
-		if strings.HasPrefix(token, AccessTokenPrefix) {
-			return store.LookupAccessToken(ctx, token)
+		if auth.LooksLikeKey(token) {
+			return store.LookupAccessKey(ctx, token)
 		}
 		principal, err := store.Lookup(ctx, token)
 		if err == nil {

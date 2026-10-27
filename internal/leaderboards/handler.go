@@ -29,21 +29,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 		return
 	}
-	apiKey := r.Header.Get("X-Motif-API-Key")
-	if apiKey == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	credential, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
-	credential, err := auth.LookupIntegrationCredential(r.Context(), h.db, apiKey)
-	if errors.Is(err, auth.ErrInvalidCredential) {
-		writeError(w, http.StatusUnauthorized, "invalid_api_key", "credential is invalid or revoked")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credential could not be verified")
-		return
-	}
-	scope := Scope{TenantID: credential.TenantID, EnvironmentID: credential.EnvironmentID}
+	scope := Scope(credential.Scope())
 	// Zero means database time, the clock ledger entries are stamped with.
 	var now time.Time
 	if key == "" {

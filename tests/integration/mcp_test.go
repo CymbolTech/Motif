@@ -155,20 +155,27 @@ func TestMCPConfiguresTestsAndExplainsAWorkspace(t *testing.T) {
 	if status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/environments", session, map[string]any{"tenant_id": "mcp-workspace", "environment_id": "production", "name": "Production"}); status != http.StatusCreated {
 		t.Fatalf("create production environment = %d %v", status, body)
 	}
-	createToken := func(name string, scopes []string, environments []string) (string, string) {
+	createKey := func(name string, scopes ...string) (string, string) {
 		t.Helper()
-		status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-tokens", session, map[string]any{"tenant_id": "mcp-workspace", "name": name, "scopes": scopes, "environment_ids": environments, "expires_in_days": 30})
+		status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-keys", session, map[string]any{"tenant_id": "mcp-workspace", "environment_id": "sandbox", "name": name, "scopes": scopes, "expires_in_days": 30})
 		if status != http.StatusCreated {
-			t.Fatalf("create %s token = %d %v", name, status, body)
+			t.Fatalf("create %s key = %d %v", name, status, body)
 		}
-		return body["token"].(string), body["access_token"].(map[string]any)["id"].(string)
+		return body["key"].(string), body["access_key"].(map[string]any)["id"].(string)
 	}
-	builderToken, builderID := createToken("builder", []string{"read", "write", "publish"}, []string{"sandbox"})
-	writerToken, _ := createToken("writer", []string{"read", "write"}, nil)
-	readerToken, readerID := createToken("reader", []string{"read"}, nil)
+	builderToken, builderID := createKey("builder", "read", "write", "edit", "mcp")
+	writerToken, writerID := createKey("writer", "read", "write", "mcp")
+	readerToken, readerID := createKey("reader", "read", "mcp")
+	backendKey, _ := createKey("backend", "read", "write")
 
-	if status, _ := adminJSON(t, api, http.MethodPost, "/v1/admin/access-tokens", builderToken, map[string]any{"tenant_id": "mcp-workspace", "name": "minted", "scopes": []string{"read"}}); status != http.StatusForbidden {
-		t.Fatalf("an access token minting another token = %d, want 403", status)
+	if status, _ := adminJSON(t, api, http.MethodPost, "/v1/admin/access-keys", builderToken, map[string]any{"tenant_id": "mcp-workspace", "environment_id": "sandbox", "name": "minted", "scopes": []string{"read"}}); status != http.StatusForbidden {
+		t.Fatalf("an access key minting another key = %d, want 403", status)
+	}
+	if _, err := connectMCP(t, mcpServer.URL, backendKey); err == nil {
+		t.Fatal("a key without the mcp scope must not connect to the MCP server")
+	}
+	if status, _ := adminJSON(t, api, http.MethodGet, "/v1/admin/rules?tenant_id=mcp-workspace&environment_id=sandbox", backendKey, nil); status != http.StatusForbidden {
+		t.Fatalf("a key without the mcp scope reading the admin API = %d, want 403", status)
 	}
 
 	builder, err := connectMCP(t, mcpServer.URL, builderToken)
@@ -180,7 +187,7 @@ func TestMCPConfiguresTestsAndExplainsAWorkspace(t *testing.T) {
 		t.Fatalf("get_workspace = %s", text)
 	}
 	if environments := workspace["environments"].([]any); len(environments) != 1 {
-		t.Fatalf("builder token environments = %v, want sandbox only", environments)
+		t.Fatalf("builder key environments = %v, want sandbox only", environments)
 	}
 	if _, text, failed := callTool(t, builder, "list_event_types", map[string]any{"environment": "production"}); !failed || !strings.Contains(text, "not available") {
 		t.Fatalf("builder reaching production = %s, want a refusal", text)
@@ -262,8 +269,8 @@ func TestMCPConfiguresTestsAndExplainsAWorkspace(t *testing.T) {
 	if err := db.pool.QueryRow(ctx, `SELECT actor_type, actor_id, metadata->>'client' FROM audit_log WHERE action = 'rule.created' ORDER BY id DESC LIMIT 1`).Scan(&actorType, &actorID, &client); err != nil {
 		t.Fatal(err)
 	}
-	if actorType != "access_token" || actorID != builderID || client != "mcp" {
-		t.Fatalf("rule.created audit = %s/%s/%s, want access_token/%s/mcp", actorType, actorID, client, builderID)
+	if actorType != "access_key" || actorID != builderID || client != "mcp" {
+		t.Fatalf("rule.created audit = %s/%s/%s, want access_key/%s/mcp", actorType, actorID, client, builderID)
 	}
 
 	writer, err := connectMCP(t, mcpServer.URL, writerToken)
@@ -284,11 +291,17 @@ func TestMCPConfiguresTestsAndExplainsAWorkspace(t *testing.T) {
 	if names := listToolNames(t, reader); slices.Contains(names, "save_rule_draft") || slices.Contains(names, "send_test_event") {
 		t.Fatalf("reader tools = %v", names)
 	}
-	if status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-tokens/"+readerID+"/revoke?tenant_id=mcp-workspace", session, nil); status != http.StatusOK {
+	if status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-keys/"+readerID+"/revoke?tenant_id=mcp-workspace", session, nil); status != http.StatusOK {
 		t.Fatalf("revoke reader = %d %v", status, body)
 	}
 	if status, _ := adminJSON(t, api, http.MethodGet, "/v1/admin/auth/me", readerToken, nil); status != http.StatusUnauthorized {
-		t.Fatalf("revoked token = %d, want 401", status)
+		t.Fatalf("revoked key = %d, want 401", status)
+	}
+	if status, body := adminJSON(t, api, http.MethodDelete, "/v1/admin/access-keys/"+writerID+"?tenant_id=mcp-workspace", session, nil); status != http.StatusNoContent {
+		t.Fatalf("delete writer = %d %v", status, body)
+	}
+	if status, _ := adminJSON(t, api, http.MethodGet, "/v1/admin/auth/me", writerToken, nil); status != http.StatusUnauthorized {
+		t.Fatalf("deleted key = %d, want 401", status)
 	}
 }
 
@@ -310,15 +323,15 @@ func TestMCPRunsALeaderboard(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("signup = %d %v", status, signup)
 	}
-	createToken := func(scopes []string) string {
+	createKey := func(scopes ...string) string {
 		t.Helper()
-		status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-tokens", signup["token"].(string), map[string]any{"tenant_id": "cafe", "name": strings.Join(scopes, "-"), "scopes": scopes, "expires_in_days": 30})
+		status, body := adminJSON(t, api, http.MethodPost, "/v1/admin/access-keys", signup["token"].(string), map[string]any{"tenant_id": "cafe", "environment_id": "sandbox", "name": strings.Join(scopes, "-"), "scopes": scopes, "expires_in_days": 30})
 		if status != http.StatusCreated {
-			t.Fatalf("create token = %d %v", status, body)
+			t.Fatalf("create key = %d %v", status, body)
 		}
-		return body["token"].(string)
+		return body["key"].(string)
 	}
-	builder, err := connectMCP(t, mcpServer.URL, createToken([]string{"read", "write"}))
+	builder, err := connectMCP(t, mcpServer.URL, createKey("read", "write", "edit", "mcp"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +400,7 @@ func TestMCPRunsALeaderboard(t *testing.T) {
 		t.Fatalf("monthly board active = %v (err %v), want deactivated", active, err)
 	}
 
-	reader, err := connectMCP(t, mcpServer.URL, createToken([]string{"read"}))
+	reader, err := connectMCP(t, mcpServer.URL, createKey("read", "mcp"))
 	if err != nil {
 		t.Fatal(err)
 	}

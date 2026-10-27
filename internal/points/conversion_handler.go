@@ -1,7 +1,6 @@
 package points
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -30,19 +29,11 @@ func (h *ConversionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 		return
 	}
-	if r.Header.Get("X-Motif-API-Key") == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	key, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
-	scope, err := lookupIntegrationScope(r.Context(), h.db, r.Header.Get("X-Motif-API-Key"))
-	if errors.Is(err, errInvalidCredential) {
-		writeError(w, http.StatusUnauthorized, "invalid_api_key", "credential is invalid or revoked")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credential could not be verified")
-		return
-	}
+	scope := Scope(key.Scope())
 	var request conversionRequest
 	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 16*1024), &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
@@ -69,9 +60,4 @@ func (h *ConversionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusCreated, conversion)
 	}
-}
-
-func lookupIntegrationScope(ctx context.Context, db *pgxpool.Pool, apiKey string) (Scope, error) {
-	scope, err := auth.LookupIntegrationCredential(ctx, db, apiKey)
-	return Scope{TenantID: scope.TenantID, EnvironmentID: scope.EnvironmentID}, err
 }

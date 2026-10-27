@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { IconAlertTriangle, IconArrowRight, IconCheck, IconCopy, IconInfoCircle } from '@tabler/icons-react';
+import { IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { RouterProvider } from '@tanstack/react-router';
 import { router } from './router';
 import { ScopeProvider } from '../shared/scope/ScopeContext';
 import { BrandMark } from '../shared/ui/BrandMark';
-import { clearAdminSession, fetchAdminPrincipal, loginAdmin, signupTenant, type AdminPrincipal, type TenantSignupResponse } from '../shared/api/client';
+import { clearAdminSession, fetchAdminPrincipal, loginAdmin, signupTenant, type AdminPrincipal } from '../shared/api/client';
 
 export function App() {
   const [principal, setPrincipal] = useState<AdminPrincipal | null>(null);
@@ -54,7 +54,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (principal: AdminPr
   const [password, setPassword] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceId, setWorkspaceId] = useState('');
-  const [createdWorkspace, setCreatedWorkspace] = useState<TenantSignupResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,8 +71,9 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (principal: AdminPr
         const tenantId = workspaceSlug(workspaceId || name);
         if (!name) throw new Error('Enter a workspace name.');
         if (!tenantId) throw new Error('Choose a workspace name using letters or numbers.');
-        const result = await signupTenant({ email, password, tenant_id: tenantId, name });
-        setCreatedWorkspace(result);
+        // A new workspace has no access keys; its administrator creates them
+        // under Access keys when the backend is ready to connect.
+        onAuthenticated((await signupTenant({ email, password, tenant_id: tenantId, name })).admin);
       } else {
         onAuthenticated(await loginAdmin(email, password));
       }
@@ -83,8 +83,6 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (principal: AdminPr
       setSubmitting(false);
     }
   }
-
-  if (createdWorkspace) return <WorkspaceCreatedScreen signup={createdWorkspace} onContinue={() => onAuthenticated(createdWorkspace.admin)} />;
 
   return <main className="auth-screen"><section className="auth-card" aria-labelledby="auth-title">
     <AuthBrand />
@@ -100,19 +98,3 @@ function LoginScreen({ onAuthenticated }: { onAuthenticated: (principal: AdminPr
   </section></main>;
 }
 
-function WorkspaceCreatedScreen({ signup, onContinue }: { signup: TenantSignupResponse; onContinue: () => void }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyKey() {
-    await navigator.clipboard?.writeText(signup.integration_key);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
-
-  return <main className="auth-screen"><section className="auth-card" aria-labelledby="workspace-ready-title">
-    <AuthBrand />
-    <div className="auth-copy"><h1 id="workspace-ready-title">{signup.tenant.name} is ready</h1><p>Your workspace account is active. Save the integration key now; it is shown only once and belongs in your backend secret store.</p></div>
-    <div className="secret-field"><span className="field-label">REST integration key</span><div className="secret-value"><code>{signup.integration_key}</code><button className="icon-button" type="button" onClick={() => void copyKey()} aria-label={copied ? 'Integration key copied' : 'Copy integration key'}>{copied ? <IconCheck size={15} /> : <IconCopy size={15} />}</button></div><small className="field-help">Use this key for server-side event requests. Never ship it to a browser or mobile app.</small></div>
-    <button className="primary-button auth-submit" type="button" onClick={onContinue}>Open workspace <IconArrowRight size={15} /></button>
-  </section></main>;
-}

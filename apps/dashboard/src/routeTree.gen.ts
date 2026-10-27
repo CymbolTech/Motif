@@ -10,7 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AccessTokensRouteImport } from './routes/access-tokens'
+import { Route as AccessKeysRouteImport } from './routes/access-keys'
 import { Route as AchievementsRouteImport } from './routes/achievements'
 import { Route as AutomationsRouteImport } from './routes/automations'
 import { Route as CampaignsRouteImport } from './routes/campaigns'
@@ -23,8 +23,8 @@ import { Route as LoyaltyRouteImport } from './routes/loyalty'
 import { Route as MissionsRouteImport } from './routes/missions'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as RewardsRouteImport } from './routes/rewards'
-import { Route as AccessTokensIndexRouteImport } from './routes/access-tokens/index'
-import { Route as AccessTokensNewRouteImport } from './routes/access-tokens/new'
+import { Route as AccessKeysIndexRouteImport } from './routes/access-keys/index'
+import { Route as AccessKeysNewRouteImport } from './routes/access-keys/new'
 import { Route as AchievementsIndexRouteImport } from './routes/achievements/index'
 import { Route as AchievementsNewRouteImport } from './routes/achievements/new'
 import { Route as AutomationsIndexRouteImport } from './routes/automations/index'
@@ -46,6 +46,7 @@ import { Route as MissionsIndexRouteImport } from './routes/missions/index'
 import { Route as MissionsNewRouteImport } from './routes/missions/new'
 import { Route as RewardsIndexRouteImport } from './routes/rewards/index'
 import { Route as RewardsNewRouteImport } from './routes/rewards/new'
+import { Route as AccessKeysIdEditRouteImport } from './routes/access-keys/$id.edit'
 import { Route as AchievementsIdEditRouteImport } from './routes/achievements/$id.edit'
 import { Route as AutomationsIdEditRouteImport } from './routes/automations/$id.edit'
 import { Route as CampaignsIdEditRouteImport } from './routes/campaigns/$id.edit'
@@ -62,9 +63,9 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccessTokensRoute = AccessTokensRouteImport.update({
-  id: '/access-tokens',
-  path: '/access-tokens',
+const AccessKeysRoute = AccessKeysRouteImport.update({
+  id: '/access-keys',
+  path: '/access-keys',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AchievementsRoute = AchievementsRouteImport.update({
@@ -127,15 +128,15 @@ const RewardsRoute = RewardsRouteImport.update({
   path: '/rewards',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AccessTokensIndexRoute = AccessTokensIndexRouteImport.update({
+const AccessKeysIndexRoute = AccessKeysIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AccessTokensRoute,
+  getParentRoute: () => AccessKeysRoute,
 } as any)
-const AccessTokensNewRoute = AccessTokensNewRouteImport.update({
+const AccessKeysNewRoute = AccessKeysNewRouteImport.update({
   id: '/new',
   path: '/new',
-  getParentRoute: () => AccessTokensRoute,
+  getParentRoute: () => AccessKeysRoute,
 } as any)
 const AchievementsIndexRoute = AchievementsIndexRouteImport.update({
   id: '/',
@@ -242,6 +243,11 @@ const RewardsNewRoute = RewardsNewRouteImport.update({
   path: '/new',
   getParentRoute: () => RewardsRoute,
 } as any)
+const AccessKeysIdEditRoute = AccessKeysIdEditRouteImport.update({
+  id: '/$id/edit',
+  path: '/$id/edit',
+  getParentRoute: () => AccessKeysRoute,
+} as any)
 const AchievementsIdEditRoute = AchievementsIdEditRouteImport.update({
   id: '/$id/edit',
   path: '/$id/edit',
@@ -295,7 +301,7 @@ const RewardsIdEditRoute = RewardsIdEditRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/access-tokens': typeof AccessTokensRouteWithChildren
+  '/access-keys': typeof AccessKeysRouteWithChildren
   '/achievements': typeof AchievementsRouteWithChildren
   '/automations': typeof AutomationsRouteWithChildren
   '/campaigns': typeof CampaignsRouteWithChildren
@@ -308,7 +314,7 @@ export interface FileRoutesByFullPath {
   '/missions': typeof MissionsRouteWithChildren
   '/reports': typeof ReportsRoute
   '/rewards': typeof RewardsRouteWithChildren
-  '/access-tokens/new': typeof AccessTokensNewRoute
+  '/access-keys/new': typeof AccessKeysNewRoute
   '/achievements/new': typeof AchievementsNewRoute
   '/automations/new': typeof AutomationsNewRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -320,7 +326,7 @@ export interface FileRoutesByFullPath {
   '/levels/new': typeof LevelsNewRoute
   '/missions/new': typeof MissionsNewRoute
   '/rewards/new': typeof RewardsNewRoute
-  '/access-tokens/': typeof AccessTokensIndexRoute
+  '/access-keys/': typeof AccessKeysIndexRoute
   '/achievements/': typeof AchievementsIndexRoute
   '/automations/': typeof AutomationsIndexRoute
   '/campaigns/': typeof CampaignsIndexRoute
@@ -331,6 +337,7 @@ export interface FileRoutesByFullPath {
   '/levels/': typeof LevelsIndexRoute
   '/missions/': typeof MissionsIndexRoute
   '/rewards/': typeof RewardsIndexRoute
+  '/access-keys/$id/edit': typeof AccessKeysIdEditRoute
   '/achievements/$id/edit': typeof AchievementsIdEditRoute
   '/automations/$id/edit': typeof AutomationsIdEditRoute
   '/campaigns/$id/edit': typeof CampaignsIdEditRoute
@@ -346,7 +353,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/loyalty': typeof LoyaltyRoute
   '/reports': typeof ReportsRoute
-  '/access-tokens/new': typeof AccessTokensNewRoute
+  '/access-keys/new': typeof AccessKeysNewRoute
   '/achievements/new': typeof AchievementsNewRoute
   '/automations/new': typeof AutomationsNewRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -358,7 +365,7 @@ export interface FileRoutesByTo {
   '/levels/new': typeof LevelsNewRoute
   '/missions/new': typeof MissionsNewRoute
   '/rewards/new': typeof RewardsNewRoute
-  '/access-tokens': typeof AccessTokensIndexRoute
+  '/access-keys': typeof AccessKeysIndexRoute
   '/achievements': typeof AchievementsIndexRoute
   '/automations': typeof AutomationsIndexRoute
   '/campaigns': typeof CampaignsIndexRoute
@@ -369,6 +376,7 @@ export interface FileRoutesByTo {
   '/levels': typeof LevelsIndexRoute
   '/missions': typeof MissionsIndexRoute
   '/rewards': typeof RewardsIndexRoute
+  '/access-keys/$id/edit': typeof AccessKeysIdEditRoute
   '/achievements/$id/edit': typeof AchievementsIdEditRoute
   '/automations/$id/edit': typeof AutomationsIdEditRoute
   '/campaigns/$id/edit': typeof CampaignsIdEditRoute
@@ -383,7 +391,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/access-tokens': typeof AccessTokensRouteWithChildren
+  '/access-keys': typeof AccessKeysRouteWithChildren
   '/achievements': typeof AchievementsRouteWithChildren
   '/automations': typeof AutomationsRouteWithChildren
   '/campaigns': typeof CampaignsRouteWithChildren
@@ -396,7 +404,7 @@ export interface FileRoutesById {
   '/missions': typeof MissionsRouteWithChildren
   '/reports': typeof ReportsRoute
   '/rewards': typeof RewardsRouteWithChildren
-  '/access-tokens/new': typeof AccessTokensNewRoute
+  '/access-keys/new': typeof AccessKeysNewRoute
   '/achievements/new': typeof AchievementsNewRoute
   '/automations/new': typeof AutomationsNewRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -408,7 +416,7 @@ export interface FileRoutesById {
   '/levels/new': typeof LevelsNewRoute
   '/missions/new': typeof MissionsNewRoute
   '/rewards/new': typeof RewardsNewRoute
-  '/access-tokens/': typeof AccessTokensIndexRoute
+  '/access-keys/': typeof AccessKeysIndexRoute
   '/achievements/': typeof AchievementsIndexRoute
   '/automations/': typeof AutomationsIndexRoute
   '/campaigns/': typeof CampaignsIndexRoute
@@ -419,6 +427,7 @@ export interface FileRoutesById {
   '/levels/': typeof LevelsIndexRoute
   '/missions/': typeof MissionsIndexRoute
   '/rewards/': typeof RewardsIndexRoute
+  '/access-keys/$id/edit': typeof AccessKeysIdEditRoute
   '/achievements/$id/edit': typeof AchievementsIdEditRoute
   '/automations/$id/edit': typeof AutomationsIdEditRoute
   '/campaigns/$id/edit': typeof CampaignsIdEditRoute
@@ -434,7 +443,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/access-tokens'
+    | '/access-keys'
     | '/achievements'
     | '/automations'
     | '/campaigns'
@@ -447,7 +456,7 @@ export interface FileRouteTypes {
     | '/missions'
     | '/reports'
     | '/rewards'
-    | '/access-tokens/new'
+    | '/access-keys/new'
     | '/achievements/new'
     | '/automations/new'
     | '/campaigns/new'
@@ -459,7 +468,7 @@ export interface FileRouteTypes {
     | '/levels/new'
     | '/missions/new'
     | '/rewards/new'
-    | '/access-tokens/'
+    | '/access-keys/'
     | '/achievements/'
     | '/automations/'
     | '/campaigns/'
@@ -470,6 +479,7 @@ export interface FileRouteTypes {
     | '/levels/'
     | '/missions/'
     | '/rewards/'
+    | '/access-keys/$id/edit'
     | '/achievements/$id/edit'
     | '/automations/$id/edit'
     | '/campaigns/$id/edit'
@@ -485,7 +495,7 @@ export interface FileRouteTypes {
     | '/'
     | '/loyalty'
     | '/reports'
-    | '/access-tokens/new'
+    | '/access-keys/new'
     | '/achievements/new'
     | '/automations/new'
     | '/campaigns/new'
@@ -497,7 +507,7 @@ export interface FileRouteTypes {
     | '/levels/new'
     | '/missions/new'
     | '/rewards/new'
-    | '/access-tokens'
+    | '/access-keys'
     | '/achievements'
     | '/automations'
     | '/campaigns'
@@ -508,6 +518,7 @@ export interface FileRouteTypes {
     | '/levels'
     | '/missions'
     | '/rewards'
+    | '/access-keys/$id/edit'
     | '/achievements/$id/edit'
     | '/automations/$id/edit'
     | '/campaigns/$id/edit'
@@ -521,7 +532,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/access-tokens'
+    | '/access-keys'
     | '/achievements'
     | '/automations'
     | '/campaigns'
@@ -534,7 +545,7 @@ export interface FileRouteTypes {
     | '/missions'
     | '/reports'
     | '/rewards'
-    | '/access-tokens/new'
+    | '/access-keys/new'
     | '/achievements/new'
     | '/automations/new'
     | '/campaigns/new'
@@ -546,7 +557,7 @@ export interface FileRouteTypes {
     | '/levels/new'
     | '/missions/new'
     | '/rewards/new'
-    | '/access-tokens/'
+    | '/access-keys/'
     | '/achievements/'
     | '/automations/'
     | '/campaigns/'
@@ -557,6 +568,7 @@ export interface FileRouteTypes {
     | '/levels/'
     | '/missions/'
     | '/rewards/'
+    | '/access-keys/$id/edit'
     | '/achievements/$id/edit'
     | '/automations/$id/edit'
     | '/campaigns/$id/edit'
@@ -571,7 +583,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AccessTokensRoute: typeof AccessTokensRouteWithChildren
+  AccessKeysRoute: typeof AccessKeysRouteWithChildren
   AchievementsRoute: typeof AchievementsRouteWithChildren
   AutomationsRoute: typeof AutomationsRouteWithChildren
   CampaignsRoute: typeof CampaignsRouteWithChildren
@@ -595,11 +607,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/access-tokens': {
-      id: '/access-tokens'
-      path: '/access-tokens'
-      fullPath: '/access-tokens'
-      preLoaderRoute: typeof AccessTokensRouteImport
+    '/access-keys': {
+      id: '/access-keys'
+      path: '/access-keys'
+      fullPath: '/access-keys'
+      preLoaderRoute: typeof AccessKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/achievements': {
@@ -686,19 +698,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RewardsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/access-tokens/': {
-      id: '/access-tokens/'
+    '/access-keys/': {
+      id: '/access-keys/'
       path: '/'
-      fullPath: '/access-tokens/'
-      preLoaderRoute: typeof AccessTokensIndexRouteImport
-      parentRoute: typeof AccessTokensRoute
+      fullPath: '/access-keys/'
+      preLoaderRoute: typeof AccessKeysIndexRouteImport
+      parentRoute: typeof AccessKeysRoute
     }
-    '/access-tokens/new': {
-      id: '/access-tokens/new'
+    '/access-keys/new': {
+      id: '/access-keys/new'
       path: '/new'
-      fullPath: '/access-tokens/new'
-      preLoaderRoute: typeof AccessTokensNewRouteImport
-      parentRoute: typeof AccessTokensRoute
+      fullPath: '/access-keys/new'
+      preLoaderRoute: typeof AccessKeysNewRouteImport
+      parentRoute: typeof AccessKeysRoute
     }
     '/achievements/': {
       id: '/achievements/'
@@ -847,6 +859,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RewardsNewRouteImport
       parentRoute: typeof RewardsRoute
     }
+    '/access-keys/$id/edit': {
+      id: '/access-keys/$id/edit'
+      path: '/$id/edit'
+      fullPath: '/access-keys/$id/edit'
+      preLoaderRoute: typeof AccessKeysIdEditRouteImport
+      parentRoute: typeof AccessKeysRoute
+    }
     '/achievements/$id/edit': {
       id: '/achievements/$id/edit'
       path: '/$id/edit'
@@ -920,18 +939,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AccessTokensRouteChildren {
-  AccessTokensNewRoute: typeof AccessTokensNewRoute
-  AccessTokensIndexRoute: typeof AccessTokensIndexRoute
+interface AccessKeysRouteChildren {
+  AccessKeysNewRoute: typeof AccessKeysNewRoute
+  AccessKeysIndexRoute: typeof AccessKeysIndexRoute
+  AccessKeysIdEditRoute: typeof AccessKeysIdEditRoute
 }
 
-const AccessTokensRouteChildren: AccessTokensRouteChildren = {
-  AccessTokensNewRoute: AccessTokensNewRoute,
-  AccessTokensIndexRoute: AccessTokensIndexRoute,
+const AccessKeysRouteChildren: AccessKeysRouteChildren = {
+  AccessKeysNewRoute: AccessKeysNewRoute,
+  AccessKeysIndexRoute: AccessKeysIndexRoute,
+  AccessKeysIdEditRoute: AccessKeysIdEditRoute,
 }
 
-const AccessTokensRouteWithChildren = AccessTokensRoute._addFileChildren(
-  AccessTokensRouteChildren,
+const AccessKeysRouteWithChildren = AccessKeysRoute._addFileChildren(
+  AccessKeysRouteChildren,
 )
 
 interface AchievementsRouteChildren {
@@ -1103,7 +1124,7 @@ const RewardsRouteWithChildren =
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AccessTokensRoute: AccessTokensRouteWithChildren,
+  AccessKeysRoute: AccessKeysRouteWithChildren,
   AchievementsRoute: AchievementsRouteWithChildren,
   AutomationsRoute: AutomationsRouteWithChildren,
   CampaignsRoute: CampaignsRouteWithChildren,

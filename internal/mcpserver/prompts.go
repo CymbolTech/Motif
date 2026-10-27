@@ -29,7 +29,7 @@ Work in this order and keep me informed:
 2. Read the codebase to find where each relevant business fact becomes true on the server (payment captured, lesson graded). List them with file paths and propose event types and payload fields before changing anything. Rules read only the current event, so include every field a rule needs.
 3. Register the event contracts, then create only the catalog items the design needs.
 4. Write each rule, run check_rule with a matching and a non-matching sample payload, and save drafts.
-5. Show me the rules and ask before publish_rule. If the token cannot publish, give me the review link.
+5. Show me the rules and ask before publish_rule. If the key cannot publish (it needs the edit scope), give me the review link.
 6. Prove it: send_test_event with a test user, read the trace, then send the same event_id again and confirm nothing was awarded twice.
 7. Use get_integration_snippet and add the sending code to the backend where the fact becomes true, with the key in MOTIF_API_KEY, a stable event_id and retries.
 8. Finish with the launch checklist from read_docs and tell me what is left for production.`, goal, environmentNote(request), sandboxHint(session))), nil
@@ -87,5 +87,5 @@ func sandboxHint(session *Session) string {
 			return "Build and test in a non-production environment such as " + environment.ID + "; repeat the configuration in production only when I say so."
 		}
 	}
-	return "This token can only reach production, so treat every write and test event as live and confirm with me first."
+	return "This access key belongs to production, so treat every write and test event as live and confirm with me first."
 }

@@ -8,10 +8,11 @@ import (
 	"github.com/motifengine/motifengine/internal/adminauth"
 )
 
-// EnsureIntegrationCredential creates the local development tenant and one
-// credential without persisting the raw secret. Production provisioning will
-// move to an authenticated platform-admin workflow in a later increment.
-func EnsureIntegrationCredential(ctx context.Context, db *pgxpool.Pool, tenantID, environmentID, apiKey string) error {
+// EnsureAccessKey creates the operator's bootstrap tenant and an access key
+// that reads and writes through the REST API, without persisting the raw
+// secret. Workspaces created by sign-up get no key; their administrators
+// create keys in the console.
+func EnsureAccessKey(ctx context.Context, db *pgxpool.Pool, tenantID, environmentID, apiKey string) error {
 	keyHash := sha256.Sum256([]byte(apiKey))
 	tx, err := db.Begin(ctx)
 	if err != nil {
@@ -34,9 +35,9 @@ func EnsureIntegrationCredential(ctx context.Context, db *pgxpool.Pool, tenantID
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO integration_credentials (tenant_id, environment_id, key_hash)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (tenant_id, environment_id) DO NOTHING`, tenantID, environmentID, keyHash[:]); err != nil {
+		INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes)
+		VALUES ('key_bootstrap_' || substr(encode($3, 'hex'), 1, 12), $1, $2, 'Bootstrap key', $3, ARRAY['read', 'write'])
+		ON CONFLICT DO NOTHING`, tenantID, environmentID, keyHash[:]); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

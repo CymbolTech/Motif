@@ -117,7 +117,7 @@ func runMigration(t *testing.T, databaseURL, direction string) {
 
 func TestMigrationsRoundTrip(t *testing.T) {
 	db := disposableDatabase(t)
-	for version := 28; version > 0; version-- {
+	for version := 29; version > 0; version-- {
 		var current int
 		if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 			t.Fatalf("migration version before down: %v", err)
@@ -139,8 +139,8 @@ func TestMigrationsRoundTrip(t *testing.T) {
 	if err := db.pool.QueryRow(context.Background(), `SELECT max(version) FROM schema_migrations`).Scan(&current); err != nil {
 		t.Fatal(err)
 	}
-	if current != 28 {
-		t.Fatalf("migration version after reapply = %d; want 28", current)
+	if current != 29 {
+		t.Fatalf("migration version after reapply = %d; want 29", current)
 	}
 }
 
@@ -547,7 +547,7 @@ func TestConvertedPointsRedeemReward(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.pool.Exec(ctx, `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash) VALUES ($1, $2, $3)`, scope.TenantID, scope.EnvironmentID, auth.Digest(apiKey)); err != nil {
+	if _, err := db.pool.Exec(ctx, `INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes) VALUES (md5(random()::text), $1, $2, 'test', $3, ARRAY['read', 'write'])`, scope.TenantID, scope.EnvironmentID, auth.Digest(apiKey)); err != nil {
 		t.Fatal(err)
 	}
 	ledger := points.NewLedger(db.pool)
@@ -557,7 +557,7 @@ func TestConvertedPointsRedeemReward(t *testing.T) {
 	if _, err := points.Convert(ctx, db.pool, points.ConversionRequest{Scope: scope, ExternalUserID: "user-1", SourceCurrency: "points", TargetCurrency: "bonus", Amount: 40, RateNumerator: 1, RateDenominator: 2, IdempotencyKey: "convert-for-reward"}); err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(rewards.NewHandler(db.pool, rewards.MockProvider{}))
+	server := httptest.NewServer(keyed(db.pool, rewards.NewHandler(db.pool, rewards.MockProvider{})))
 	t.Cleanup(server.Close)
 	post := func() rewards.Redemption {
 		t.Helper()
@@ -611,7 +611,7 @@ func seedPaidReward(t *testing.T, db *pgxpool.Pool) (points.Scope, string) {
 	if _, err := db.Exec(ctx, `INSERT INTO rewards (id, tenant_id, environment_id, name, reward_type, cost_currency_id, cost_amount, payload) VALUES ('integration-reward', 'integration-tenant', 'sandbox', 'Paid reward', 'digital_unlock', 'integration-currency', 15, '{}'::jsonb)`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(ctx, `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash) VALUES ($1, $2, $3)`, scope.TenantID, scope.EnvironmentID, auth.Digest(apiKey)); err != nil {
+	if _, err := db.Exec(ctx, `INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes) VALUES (md5(random()::text), $1, $2, 'test', $3, ARRAY['read', 'write'])`, scope.TenantID, scope.EnvironmentID, auth.Digest(apiKey)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := points.NewLedger(db).Award(ctx, scope, "user-1", "points", 20, "reward-seed-award", nil); err != nil {
@@ -653,7 +653,7 @@ func TestRewardDefinitiveFailureRefundsAndRetryChargesOnce(t *testing.T) {
 	db := disposableDatabase(t)
 	scope, apiKey := seedPaidReward(t, db.pool)
 	provider := &controlledRewardProvider{deliveryErr: errors.New("provider rejected delivery")}
-	server := httptest.NewServer(rewards.NewHandler(db.pool, provider))
+	server := httptest.NewServer(keyed(db.pool, rewards.NewHandler(db.pool, provider)))
 	t.Cleanup(server.Close)
 	status, body := sendRewardPost(t, server, apiKey, "/v1/rewards/integration-reward/redemptions")
 	if status != http.StatusInternalServerError {
@@ -714,7 +714,7 @@ func TestUnknownRewardDeliveryReconcilesWithoutRedelivery(t *testing.T) {
 			db := disposableDatabase(t)
 			_, apiKey := seedPaidReward(t, db.pool)
 			provider := &controlledRewardProvider{deliveryErr: rewards.ErrDeliveryUnknown, status: rewards.DeliveryStatus{State: scenario.state, ProviderReference: "provider-confirmed", FailureReason: "provider-confirmed-failure"}}
-			server := httptest.NewServer(rewards.NewHandler(db.pool, provider))
+			server := httptest.NewServer(keyed(db.pool, rewards.NewHandler(db.pool, provider)))
 			t.Cleanup(server.Close)
 			status, body := sendRewardPost(t, server, apiKey, "/v1/rewards/integration-reward/redemptions")
 			if status != http.StatusAccepted {
@@ -752,7 +752,7 @@ func TestEventOutboxJetStreamAndIdempotentAward(t *testing.T) {
 	seedCurrency(t, db.pool)
 	ctx := context.Background()
 	apiKey := "integration-only-api-key"
-	if _, err := db.pool.Exec(ctx, `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash) VALUES ('integration-tenant', 'sandbox', $1)`, auth.Digest(apiKey)); err != nil {
+	if _, err := db.pool.Exec(ctx, `INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes) VALUES (md5(random()::text), 'integration-tenant', 'sandbox', 'test', $1, ARRAY['read', 'write'])`, auth.Digest(apiKey)); err != nil {
 		t.Fatal(err)
 	}
 	for _, query := range []string{
@@ -764,7 +764,7 @@ func TestEventOutboxJetStreamAndIdempotentAward(t *testing.T) {
 			t.Fatalf("seed event rule: %v", err)
 		}
 	}
-	server := httptest.NewServer(events.NewHandler(db.pool))
+	server := httptest.NewServer(keyed(db.pool, events.NewHandler(db.pool)))
 	t.Cleanup(server.Close)
 	postEvent := func() events.Receipt {
 		t.Helper()
@@ -896,7 +896,7 @@ func TestOutboxSurvivesWorkerRestart(t *testing.T) {
 	seedCurrency(t, db.pool)
 	ctx := context.Background()
 	apiKey := "restart-integration-key"
-	if _, err := db.pool.Exec(ctx, `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash) VALUES ('integration-tenant', 'sandbox', $1)`, auth.Digest(apiKey)); err != nil {
+	if _, err := db.pool.Exec(ctx, `INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes) VALUES (md5(random()::text), 'integration-tenant', 'sandbox', 'test', $1, ARRAY['read', 'write'])`, auth.Digest(apiKey)); err != nil {
 		t.Fatal(err)
 	}
 	for _, query := range []string{
@@ -938,7 +938,7 @@ func TestOutboxSurvivesWorkerRestart(t *testing.T) {
 	}
 	stopFirst()
 	firstConnection.Close()
-	server := httptest.NewServer(events.NewHandler(db.pool))
+	server := httptest.NewServer(keyed(db.pool, events.NewHandler(db.pool)))
 	t.Cleanup(server.Close)
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/v1/events", bytes.NewBufferString(`{"event_id":"restart-event-1","event_type":"restart.event","user_id":"user-1","payload":{}}`))
 	if err != nil {

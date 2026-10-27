@@ -17,13 +17,13 @@ import (
 )
 
 type registerEventTypeInput struct {
-	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Name        string         `json:"name" jsonschema:"Stable event name such as order.completed: lowercase letters, numbers, dots, underscores and hyphens"`
 	Schema      map[string]any `json:"schema" jsonschema:"Payload schema in the supported JSON Schema subset: type, required, properties, enum, minimum, maximum, additionalProperties"`
 }
 
 type createCurrencyInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Code        string `json:"code" jsonschema:"Lowercase currency code used in rules, for example loyalty or coins"`
 	Name        string `json:"name" jsonschema:"Display name, for example Loyalty points"`
 	UnitScale   int    `json:"unit_scale,omitempty" jsonschema:"Decimal precision from 0 to 6; 0 for whole points"`
@@ -31,14 +31,14 @@ type createCurrencyInput struct {
 }
 
 type createLevelInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Level       int    `json:"level" jsonschema:"Level number, starting at 1"`
 	Name        string `json:"name" jsonschema:"Level name, for example Getting started"`
 	XPThreshold int64  `json:"xp_threshold" jsonschema:"Total XP needed to reach this level; level 1 is usually 0"`
 }
 
 type createAchievementInput struct {
-	Environment   string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment   string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Name          string `json:"name" jsonschema:"Achievement name"`
 	Description   string `json:"description,omitempty" jsonschema:"What the user did to earn it"`
 	EventType     string `json:"event_type" jsonschema:"The one event type that counts toward it"`
@@ -46,14 +46,14 @@ type createAchievementInput struct {
 }
 
 type createMissionInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Name        string `json:"name" jsonschema:"Mission name"`
 	EventType   string `json:"event_type" jsonschema:"The one event type that advances it"`
 	TargetCount int    `json:"target_count" jsonschema:"How many events complete it"`
 }
 
 type createRewardInput struct {
-	Environment  string         `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment  string         `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Name         string         `json:"name" jsonschema:"Reward name"`
 	Description  string         `json:"description,omitempty" jsonschema:"What the user receives"`
 	CostCurrency string         `json:"cost_currency,omitempty" jsonschema:"Currency code a paid reward charges; omit for a free reward"`
@@ -62,7 +62,7 @@ type createRewardInput struct {
 }
 
 type updateCatalogInput struct {
-	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Kind        string         `json:"kind" jsonschema:"The catalog item type"`
 	ID          string         `json:"id" jsonschema:"The item id from list_catalog"`
 	Active      *bool          `json:"active,omitempty" jsonschema:"Activate (true) or deactivate (false) the item"`
@@ -70,7 +70,7 @@ type updateCatalogInput struct {
 }
 
 type saveRuleDraftInput struct {
-	Environment string           `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string           `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	RuleID      string           `json:"rule_id,omitempty" jsonschema:"An existing rule to add a new draft version to; omit to create a new rule"`
 	Name        string           `json:"name,omitempty" jsonschema:"Rule name, unique in the environment; required for a new rule"`
 	Description string           `json:"description,omitempty" jsonschema:"Why the rule exists"`
@@ -82,13 +82,13 @@ type saveRuleDraftInput struct {
 }
 
 type publishRuleInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	RuleID      string `json:"rule_id" jsonschema:"The rule to publish"`
 	Version     int    `json:"version" jsonschema:"The exact draft version to publish, from save_rule_draft or list_rules"`
 }
 
 type sendTestEventInput struct {
-	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string         `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	EventType   string         `json:"event_type" jsonschema:"The event type to send"`
 	UserID      string         `json:"user_id" jsonschema:"A test user id; award actions need one"`
 	Payload     map[string]any `json:"payload" jsonschema:"The event payload, shaped like the product will send it"`
@@ -154,7 +154,7 @@ func registerConfigureTools(server *mcp.Server, session *Session) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_reward",
-		Description: "Create a digital_unlock reward, free or costing one currency. The product's backend redeems it for a user with the REST integration key; this server never redeems.",
+		Description: "Create a digital_unlock reward, free or costing one currency. The product's backend redeems it for a user over REST with an access key; this server never redeems.",
 		Annotations: writes("Create a reward", false, false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input createRewardInput) (*mcp.CallToolResult, any, error) {
 		fields := map[string]any{"name": input.Name, "reward_type": "digital_unlock", "description": input.Description, "payload": input.Payload}
@@ -165,37 +165,6 @@ func registerConfigureTools(server *mcp.Server, session *Session) {
 			fields["cost_currency"], fields["cost_amount"] = input.CostCurrency, input.CostAmount
 		}
 		return send(ctx, session, input.Environment, http.MethodPost, "/v1/admin/rewards", fields)
-	})
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "update_catalog_item",
-		Description: "Activate or deactivate a currency, level, achievement, mission, reward or leaderboard, or replace its definition. A leaderboard definition takes name, description and schedule; its key and metric cannot change, and a new schedule takes effect at the next round boundary. A deactivated leaderboard stops scoring.",
-		Annotations: writes("Update a catalog item", false, true),
-		InputSchema: updateCatalogSchema,
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, input updateCatalogInput) (*mcp.CallToolResult, any, error) {
-		if input.Active == nil && input.Definition == nil {
-			return nil, nil, errors.New("set active, definition, or both")
-		}
-		environment, err := session.Environment(input.Environment)
-		if err != nil {
-			return nil, nil, err
-		}
-		result := map[string]any{"environment": environment}
-		if input.Definition != nil {
-			updated, err := session.Client.Send(ctx, http.MethodPatch, "/v1/admin/"+catalogItemPaths[input.Kind]+"/"+url.PathEscape(input.ID), nil, session.Body(environment, input.Definition))
-			if err != nil {
-				return nil, nil, err
-			}
-			result["updated"] = updated
-		}
-		if input.Active != nil {
-			status, err := session.Client.Send(ctx, http.MethodPost, "/v1/admin/catalog-status", nil, session.Body(environment, map[string]any{"resource": input.Kind, "id": input.ID, "active": *input.Active}))
-			if err != nil {
-				return nil, nil, err
-			}
-			result["status"] = status
-		}
-		return nil, result, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -273,7 +242,40 @@ func registerConfigureTools(server *mcp.Server, session *Session) {
 	registerLeaderboardConfigureTools(server, session)
 }
 
-func registerPublishTools(server *mcp.Server, session *Session) {
+// registerEditTools needs the edit scope: they change what already exists,
+// including which rule version runs.
+func registerEditTools(server *mcp.Server, session *Session) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_catalog_item",
+		Description: "Activate or deactivate a currency, level, achievement, mission, reward or leaderboard, or replace its definition. A leaderboard definition takes name, description and schedule; its key and metric cannot change, and a new schedule takes effect at the next round boundary. A deactivated leaderboard stops scoring.",
+		Annotations: writes("Update a catalog item", false, true),
+		InputSchema: updateCatalogSchema,
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input updateCatalogInput) (*mcp.CallToolResult, any, error) {
+		if input.Active == nil && input.Definition == nil {
+			return nil, nil, errors.New("set active, definition, or both")
+		}
+		environment, err := session.Environment(input.Environment)
+		if err != nil {
+			return nil, nil, err
+		}
+		result := map[string]any{"environment": environment}
+		if input.Definition != nil {
+			updated, err := session.Client.Send(ctx, http.MethodPatch, "/v1/admin/"+catalogItemPaths[input.Kind]+"/"+url.PathEscape(input.ID), nil, session.Body(environment, input.Definition))
+			if err != nil {
+				return nil, nil, err
+			}
+			result["updated"] = updated
+		}
+		if input.Active != nil {
+			status, err := session.Client.Send(ctx, http.MethodPost, "/v1/admin/catalog-status", nil, session.Body(environment, map[string]any{"resource": input.Kind, "id": input.ID, "active": *input.Active}))
+			if err != nil {
+				return nil, nil, err
+			}
+			result["status"] = status
+		}
+		return nil, result, nil
+	})
+
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "publish_rule",
 		Description: "Publish one draft version of a rule so it runs on every new matching event in the environment, replacing the previously published version. Confirm with the human first.",
@@ -292,6 +294,8 @@ func registerPublishTools(server *mcp.Server, session *Session) {
 		}
 		return nil, map[string]any{"environment": environment, "published": published, "next": "Send a test event with send_test_event to confirm the rule awards what you expect."}, nil
 	})
+
+	registerLeaderboardEditTools(server, session)
 }
 
 func send(ctx context.Context, session *Session, requestedEnvironment, method, path string, fields map[string]any) (*mcp.CallToolResult, any, error) {

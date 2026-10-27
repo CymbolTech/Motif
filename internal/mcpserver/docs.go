@@ -30,7 +30,7 @@ var docTopics = []docTopic{
 	{"recipes", "Recipes", "Common product needs mapped to events, rules and catalog"},
 	{"boundaries", "Boundaries", "What the engine deliberately does not do"},
 	{"launch-checklist", "Launch checklist", "What to verify before relying on an integration"},
-	{"integration-api", "Integration API reference", "The REST routes a product backend calls with its integration key"},
+	{"integration-api", "Integration API reference", "The REST routes a product backend calls with an access key"},
 }
 
 type readDocsInput struct {

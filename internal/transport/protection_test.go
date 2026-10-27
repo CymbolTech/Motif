@@ -42,3 +42,22 @@ func TestProtectRejectsUnknownCORSPreflight(t *testing.T) {
 		t.Fatalf("unexpected CORS response: %d %q", res.Code, res.Body.String())
 	}
 }
+
+func TestProtectLeavesKeyCORSPathsToTheirHandler(t *testing.T) {
+	reached := false
+	handler := Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusNoContent)
+	}), ProtectionConfig{
+		AllowedOrigins: []string{"http://localhost:3000"},
+		Limiter:        NewRateLimiter(10, 5),
+		KeyCORS:        func(path string) bool { return strings.HasPrefix(path, "/v1/leaderboards") },
+	})
+	req := httptest.NewRequest(http.MethodOptions, "http://api.test/v1/leaderboards/weekly", nil)
+	req.Header.Set("Origin", "https://shop.example.com")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if !reached || res.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("a key CORS path must reach its handler untouched: reached=%t headers=%#v", reached, res.Header())
+	}
+}

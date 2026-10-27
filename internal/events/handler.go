@@ -41,8 +41,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 		return
 	}
-	if r.Header.Get("X-Motif-API-Key") == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	key, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
 	var request Request
@@ -65,7 +65,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		occurredAt = &parsed
 	}
 
-	receipt, err := h.insert(r.Context(), r.Header.Get("X-Motif-API-Key"), validated, occurredAt)
+	receipt, err := h.insert(r.Context(), key.Scope(), validated, occurredAt)
 	if err != nil {
 		if h.metrics != nil {
 			h.metrics.ObserveEvent("rejected")
@@ -73,8 +73,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var duplicatePayload *PayloadConflictError
 		var schemaMismatch *EventSchemaError
 		switch {
-		case errors.Is(err, errInvalidCredential):
-			writeError(w, http.StatusUnauthorized, "invalid_api_key", "credential is invalid or revoked")
 		case errors.As(err, &duplicatePayload):
 			writeError(w, http.StatusConflict, "event_id_conflict", duplicatePayload.Error())
 		case errors.As(err, &schemaMismatch):
@@ -98,14 +96,13 @@ func (h *Handler) serveStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 		return
 	}
-	apiKey := r.Header.Get("X-Motif-API-Key")
-	if apiKey == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	key, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
-	receipt, err := h.lookup(r.Context(), apiKey, externalID)
+	receipt, err := h.lookup(r.Context(), key.Scope(), externalID)
 	if err != nil {
-		if errors.Is(err, errInvalidCredential) || errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "event_not_found", "event was not found")
 			return
 		}
@@ -137,30 +134,14 @@ func (e *EventSchemaError) Error() string {
 	return "event type " + e.EventType + " payload does not match its schema: " + e.Reason
 }
 
-var errInvalidCredential = auth.ErrInvalidCredential
-
-func (h *Handler) insert(ctx context.Context, apiKey string, request ValidatedRequest, occurredAt *time.Time) (Receipt, error) {
+func (h *Handler) insert(ctx context.Context, scope auth.Scope, request ValidatedRequest, occurredAt *time.Time) (Receipt, error) {
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
 		return Receipt{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var tenantID, environmentID string
-	var credentialID int64
-	if err := tx.QueryRow(ctx, `
-		SELECT c.id, c.tenant_id, c.environment_id
-		FROM integration_credentials c
-		JOIN tenants t ON t.id = c.tenant_id
-		WHERE c.key_hash = $1 AND c.revoked_at IS NULL AND t.status = 'active'`, auth.Digest(apiKey)).Scan(&credentialID, &tenantID, &environmentID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Receipt{}, errInvalidCredential
-		}
-		return Receipt{}, err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE integration_credentials SET last_used_at = now() WHERE id = $1`, credentialID); err != nil {
-		return Receipt{}, err
-	}
+	tenantID, environmentID := scope.TenantID, scope.EnvironmentID
 	if err := h.limits.Check(ctx, tenantID, "max_event_payload_bytes", int64(len(request.CanonicalPayload)), 0); err != nil {
 		return Receipt{}, err
 	}
@@ -211,23 +192,14 @@ func (h *Handler) insert(ctx context.Context, apiKey string, request ValidatedRe
 	return Receipt{EventID: eventID, ExternalEventID: request.ExternalEventID, Status: status, SchemaVersion: schemaVersion}, nil
 }
 
-func (h *Handler) lookup(ctx context.Context, apiKey, externalID string) (Receipt, error) {
+func (h *Handler) lookup(ctx context.Context, scope auth.Scope, externalID string) (Receipt, error) {
 	var receipt Receipt
 	err := h.db.QueryRow(ctx, `
-		SELECT e.id, e.external_event_id, e.status, e.event_schema_version
-		FROM events e
-		JOIN integration_credentials c
-		  ON c.tenant_id = e.tenant_id AND c.environment_id = e.environment_id
-		JOIN tenants t ON t.id = c.tenant_id
-		WHERE c.key_hash = $1 AND c.revoked_at IS NULL AND t.status = 'active' AND e.external_event_id = $2`, auth.Digest(apiKey), externalID).
+		SELECT id, external_event_id, status, event_schema_version
+		FROM events
+		WHERE tenant_id = $1 AND environment_id = $2 AND external_event_id = $3`, scope.TenantID, scope.EnvironmentID, externalID).
 		Scan(&receipt.EventID, &receipt.ExternalEventID, &receipt.Status, &receipt.SchemaVersion)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Receipt{}, errInvalidCredential
-	}
-	if err != nil {
-		return Receipt{}, err
-	}
-	return receipt, nil
+	return receipt, err
 }
 
 func parseEventPath(path string) (string, bool) {

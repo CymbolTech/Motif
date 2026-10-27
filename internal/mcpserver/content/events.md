@@ -2,7 +2,7 @@
 
 ## Sending
 
-`POST /v1/events` with header `X-Motif-API-Key: <integration key>`:
+`POST /v1/events` with header `X-Motif-API-Key: <access key>` (the key needs the `write` scope):
 
 ```json
 {

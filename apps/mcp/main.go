@@ -18,7 +18,7 @@ import (
 const version = "0.2.0"
 
 func main() {
-	stdio := flag.Bool("stdio", false, "serve one session over standard input and output, authenticated by MOTIF_ACCESS_TOKEN")
+	stdio := flag.Bool("stdio", false, "serve one session over standard input and output, authenticated by MOTIF_ACCESS_KEY")
 	flag.Parse()
 	// Standard output carries the protocol in stdio mode, so logs always go to standard error.
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -40,9 +40,13 @@ func run(logger *slog.Logger, stdio bool) error {
 		HTTPClient: &http.Client{Timeout: 20 * time.Second},
 	}
 	if stdio {
-		token := os.Getenv("MOTIF_ACCESS_TOKEN")
+		token := os.Getenv("MOTIF_ACCESS_KEY")
 		if token == "" {
-			return errors.New("MOTIF_ACCESS_TOKEN is required with -stdio")
+			// The variable's name before tokens became access keys.
+			token = os.Getenv("MOTIF_ACCESS_TOKEN")
+		}
+		if token == "" {
+			return errors.New("MOTIF_ACCESS_KEY is required with -stdio")
 		}
 		return mcpserver.RunStdio(ctx, opts, token)
 	}

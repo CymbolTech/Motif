@@ -155,19 +155,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 		return
 	}
-	if r.Header.Get("X-Motif-API-Key") == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	key, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
-	scope, err := h.lookupScope(r.Context(), r.Header.Get("X-Motif-API-Key"))
-	if errors.Is(err, errInvalidCredential) {
-		writeError(w, http.StatusUnauthorized, "invalid_api_key", "credential is invalid or revoked")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credential could not be verified")
-		return
-	}
+	scope := Scope(key.Scope())
 	switch {
 	case r.Method == http.MethodGet && resource == "points":
 		h.listBalances(w, r, scope, userID)
@@ -195,13 +187,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 	}
-}
-
-var errInvalidCredential = auth.ErrInvalidCredential
-
-func (h *Handler) lookupScope(ctx context.Context, apiKey string) (Scope, error) {
-	scope, err := auth.LookupIntegrationCredential(ctx, h.db, apiKey)
-	return Scope{TenantID: scope.TenantID, EnvironmentID: scope.EnvironmentID}, err
 }
 
 func (h *Handler) listBalances(w http.ResponseWriter, r *http.Request, scope Scope, userID string) {

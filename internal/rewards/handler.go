@@ -58,22 +58,12 @@ type redemptionRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
-var errInvalidCredential = auth.ErrInvalidCredential
-
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Motif-API-Key") == "" {
-		writeError(w, http.StatusUnauthorized, "missing_api_key", "X-Motif-API-Key is required")
+	key, ok := auth.RequestKey(w, r)
+	if !ok {
 		return
 	}
-	scope, err := h.lookupScope(r.Context(), r.Header.Get("X-Motif-API-Key"))
-	if errors.Is(err, errInvalidCredential) {
-		writeError(w, http.StatusUnauthorized, "invalid_api_key", "credential is invalid or revoked")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credential could not be verified")
-		return
-	}
+	scope := points.Scope(key.Scope())
 	if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/rewards/") && strings.HasSuffix(r.URL.Path, "/redemptions") {
 		h.createRedemption(w, r, scope)
 		return
@@ -87,11 +77,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "route not found")
-}
-
-func (h *Handler) lookupScope(ctx context.Context, apiKey string) (points.Scope, error) {
-	scope, err := auth.LookupIntegrationCredential(ctx, h.db, apiKey)
-	return points.Scope{TenantID: scope.TenantID, EnvironmentID: scope.EnvironmentID}, err
 }
 
 func (h *Handler) resolveProvider(ctx context.Context, scope points.Scope) (Provider, error) {

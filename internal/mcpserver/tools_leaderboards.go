@@ -11,14 +11,14 @@ import (
 )
 
 type getLeaderboardInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Leaderboard string `json:"leaderboard" jsonschema:"The board's key, such as weekly, or its id"`
 	Round       string `json:"round,omitempty" jsonschema:"current (default), previous for the last finished round, or a round number"`
 	Limit       int    `json:"limit,omitempty" jsonschema:"How many ranked entries to return (default 10, maximum 100)"`
 }
 
 type createLeaderboardInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Key         string `json:"key" jsonschema:"Stable key the product backend reads the board by, such as weekly: lowercase letters, numbers, hyphens and underscores. It cannot change later"`
 	Name        string `json:"name" jsonschema:"Display name, such as Weekly top customers"`
 	Description string `json:"description,omitempty" jsonschema:"Who wins and what they get"`
@@ -32,7 +32,7 @@ type createLeaderboardInput struct {
 }
 
 type startRoundInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Leaderboard string `json:"leaderboard" jsonschema:"The manual board's key or id"`
 	Name        string `json:"name,omitempty" jsonschema:"Round name, such as Week 45 (default Round N)"`
 	StartsAt    string `json:"starts_at,omitempty" jsonschema:"RFC 3339 start in the future to schedule the round; omit to start now"`
@@ -41,7 +41,7 @@ type startRoundInput struct {
 }
 
 type updateRoundInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Leaderboard string `json:"leaderboard" jsonschema:"The board's key or id"`
 	RoundID     string `json:"round_id,omitempty" jsonschema:"The round to change; omit for the running round"`
 	Name        string `json:"name,omitempty" jsonschema:"A new round name"`
@@ -50,12 +50,12 @@ type updateRoundInput struct {
 }
 
 type deleteLeaderboardInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Leaderboard string `json:"leaderboard" jsonschema:"The board's key or id"`
 }
 
 type endRoundInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	Leaderboard string `json:"leaderboard" jsonschema:"The manual board's key or id"`
 	RoundID     string `json:"round_id,omitempty" jsonschema:"The round to end now, or a scheduled round to cancel; omit for the running round"`
 }
@@ -103,6 +103,8 @@ func registerLeaderboardInspectTools(server *mcp.Server, session *Session) {
 	})
 }
 
+// registerLeaderboardConfigureTools needs the write scope: it creates boards
+// and starts rounds.
 func registerLeaderboardConfigureTools(server *mcp.Server, session *Session) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_leaderboard",
@@ -126,7 +128,7 @@ func registerLeaderboardConfigureTools(server *mcp.Server, session *Session) {
 			return nil, nil, err
 		}
 		result := created.(map[string]any)
-		result["next"] = "The product backend reads the board with GET /v1/leaderboards/" + input.Key + " and its integration key."
+		result["next"] = "The product backend reads the board with GET /v1/leaderboards/" + input.Key + " and an access key with the read scope."
 		if input.Rounds == "manual" {
 			result["next"] = "Nothing counts until a round runs: call start_leaderboard_round. " + result["next"].(string)
 		}
@@ -150,6 +152,11 @@ func registerLeaderboardConfigureTools(server *mcp.Server, session *Session) {
 		return send(ctx, session, input.Environment, http.MethodPost, leaderboardPath(input.Leaderboard, "rounds"), fields)
 	})
 
+}
+
+// registerLeaderboardEditTools needs the edit scope: they change or end rounds
+// that already exist.
+func registerLeaderboardEditTools(server *mcp.Server, session *Session) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_leaderboard_round",
 		Description: "Rename a round, or on a manual board move its end (for example to run 8 days instead of 7) or remove the end so it runs until someone ends it.",
@@ -185,8 +192,6 @@ func registerLeaderboardConfigureTools(server *mcp.Server, session *Session) {
 		}
 		return nil, map[string]any{"environment": environment, "result": updated}, nil
 	})
-
-	registerLeaderboardDeleteTool(server, session)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "end_leaderboard_round",

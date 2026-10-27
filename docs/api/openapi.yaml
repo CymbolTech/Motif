@@ -32,7 +32,7 @@ paths:
                 environment_id: { type: string, default: production }
                 environment_name: { type: string, default: Production }
       responses:
-        '201': { description: Workspace, owner session, and one-time integration key }
+        '201': { description: Workspace and owner session. No access key is created; workspace admins create keys with POST /v1/admin/access-keys. }
         '409': { $ref: '#/components/responses/Conflict' }
         '400': { $ref: '#/components/responses/ValidationError' }
   /v1/admin/auth/login:
@@ -72,7 +72,7 @@ paths:
   /v1/events:
     post:
       tags: [Events]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Accept an event
       requestBody:
         required: true
@@ -90,7 +90,7 @@ paths:
   /v1/events/{externalEventId}:
     get:
       tags: [Events]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read event processing status
       parameters:
         - $ref: '#/components/parameters/ExternalEventId'
@@ -104,7 +104,7 @@ paths:
   /v1/users/{externalUserId}/profile:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read user profile, balances, and mission progress
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
       responses:
@@ -114,7 +114,7 @@ paths:
   /v1/users/{externalUserId}/points:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read point balances
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
       responses:
@@ -124,7 +124,7 @@ paths:
   /v1/users/{externalUserId}/points/transactions:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read point ledger transactions
       parameters:
         - $ref: '#/components/parameters/ExternalUserId'
@@ -136,7 +136,7 @@ paths:
           content: { application/json: { schema: { $ref: '#/components/schemas/Transactions' } } }
     post:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Award or spend points directly
       description: The idempotency key makes a retried request return the original entry; reusing it with different content returns 409.
       parameters:
@@ -151,7 +151,7 @@ paths:
   /v1/users/{externalUserId}/achievements:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read achievement progress and unlocks
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
       responses:
@@ -161,7 +161,7 @@ paths:
   /v1/users/{externalUserId}/missions:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read mission progress
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
       responses:
@@ -191,7 +191,7 @@ paths:
   /v1/users/{externalUserId}/progression:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read XP and current level
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
       responses:
@@ -201,7 +201,7 @@ paths:
   /v1/users/{externalUserId}/streaks:
     get:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read a user's current and longest event streak
       parameters:
         - { $ref: '#/components/parameters/ExternalUserId' }
@@ -210,7 +210,7 @@ paths:
   /v1/users/{externalUserId}/leaderboards:
     get:
       tags: [Leaderboards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read a user's place on every active leaderboard
       description: Entry is null on a board where the user has not scored in the round shown.
       parameters: [{ $ref: '#/components/parameters/ExternalUserId' }]
@@ -227,7 +227,7 @@ paths:
   /v1/leaderboards:
     get:
       tags: [Leaderboards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: List active leaderboards with the round each one shows
       responses:
         '200':
@@ -240,7 +240,7 @@ paths:
   /v1/leaderboards/{leaderboardKey}:
     get:
       tags: [Leaderboards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read a leaderboard's ranking
       description: >-
         With round=current (the default) this returns the running round. When no round is running it
@@ -258,7 +258,7 @@ paths:
   /v1/leaderboards/{leaderboardKey}/rounds:
     get:
       tags: [Leaderboards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: List a leaderboard's rounds, newest first, with each round's leader
       parameters:
         - $ref: '#/components/parameters/LeaderboardKey'
@@ -277,7 +277,7 @@ paths:
   /v1/points/conversions:
     post:
       tags: [Users]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Convert points atomically between currencies
       requestBody:
         required: true
@@ -290,7 +290,7 @@ paths:
   /v1/rewards/{rewardId}/redemptions:
     post:
       tags: [Rewards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Redeem a reward through the configured provider
       parameters: [{ $ref: '#/components/parameters/RewardId' }]
       requestBody:
@@ -304,7 +304,7 @@ paths:
   /v1/redemptions/{redemptionId}:
     get:
       tags: [Rewards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Read redemption status
       parameters: [{ $ref: '#/components/parameters/RedemptionId' }]
       responses:
@@ -315,7 +315,7 @@ paths:
   /v1/redemptions/{redemptionId}/retry:
     post:
       tags: [Rewards]
-      security: [{ integrationKey: [] }]
+      security: [{ accessKey: [] }]
       summary: Retry a failed or interrupted redemption
       parameters: [{ $ref: '#/components/parameters/RedemptionId' }]
       responses:
@@ -377,43 +377,6 @@ paths:
                 environment_id: { type: string }
                 name: { type: string }
       responses: { '201': { description: Environment created } }
-  /v1/admin/credentials:
-    get:
-      tags: [Administration]
-      security: [{ adminKey: [] }]
-      summary: List integration credentials without raw secrets
-      parameters:
-        - { name: tenant_id, in: query, schema: { type: string } }
-        - { name: environment_id, in: query, schema: { type: string } }
-      responses:
-        '200':
-          description: Credential metadata
-          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Credential' } } } }
-    post:
-      tags: [Administration]
-      security: [{ adminKey: [] }]
-      summary: Create an integration credential
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/CredentialRequest' } } }
-      responses:
-        '201':
-          description: Credential metadata and the raw key shown once
-          content: { application/json: { schema: { $ref: '#/components/schemas/Credential' } } }
-  /v1/admin/credentials/{credentialId}/rotate:
-    post:
-      tags: [Administration]
-      security: [{ adminKey: [] }]
-      summary: Rotate an integration credential
-      parameters: [{ name: credentialId, in: path, required: true, schema: { type: integer } }]
-      responses: { '200': { description: Rotated credential with raw key shown once } }
-  /v1/admin/credentials/{credentialId}/revoke:
-    post:
-      tags: [Administration]
-      security: [{ adminKey: [] }]
-      summary: Revoke an integration credential
-      parameters: [{ name: credentialId, in: path, required: true, schema: { type: integer } }]
-      responses: { '200': { description: Revoked credential metadata } }
   /v1/admin/audit-log:
     get:
       tags: [Administration]
@@ -573,7 +536,7 @@ paths:
   /v1/admin/events/{externalEventId}/trace:
     get:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Explain what one event did
       description: Returns the receipt, the rule executions and the point and XP entries the event produced, the missions and achievements it advanced, and a fresh evaluation of every currently published rule for its event type, including the expression that decided a non-match.
       parameters:
@@ -609,7 +572,7 @@ paths:
   /v1/admin/rules/check:
     post:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Check a rule without saving it
       description: Validates the rule, checks its event contract and currencies in the environment, and evaluates an optional sample payload. Validation problems are returned with valid set to false rather than as an error status.
       requestBody:
@@ -960,7 +923,7 @@ paths:
   /v1/admin/leaderboards:
     post:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Create a leaderboard
       description: Limited by the max_leaderboards plan entitlement.
       requestBody:
@@ -972,7 +935,7 @@ paths:
         '409': { description: The key is taken or the plan limit is reached, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: List leaderboards with the round each one shows
       parameters:
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
@@ -982,7 +945,7 @@ paths:
   /v1/admin/user-leaderboards:
     get:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Read a user's place on every active leaderboard
       parameters:
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
@@ -1001,7 +964,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}:
     patch:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Rename a leaderboard or change its schedule
       description: >-
         The key and metric cannot change. A new schedule takes effect at the next boundary: a running
@@ -1017,7 +980,7 @@ paths:
         '409': { description: Scheduled rounds must be cancelled before switching to a recurring schedule, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     delete:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Delete a leaderboard with its rounds and scores
       description: Balances and XP are not touched. To stop scoring but keep history, turn the board off with catalog-status instead.
       parameters:
@@ -1036,7 +999,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}/standings:
     get:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Read a leaderboard's ranking
       parameters:
         - $ref: '#/components/parameters/LeaderboardId'
@@ -1050,7 +1013,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}/rounds:
     get:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: List a leaderboard's rounds, newest first
       parameters:
         - $ref: '#/components/parameters/LeaderboardId'
@@ -1061,7 +1024,7 @@ paths:
         '200': { description: Rounds, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/LeaderboardRound' } } } } }
     post:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Start or schedule a round of a manual leaderboard
       description: >-
         With end_current (the default) the round running when the new one starts ends at that exact
@@ -1076,7 +1039,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}:
     patch:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Rename a round or move its end
       description: Send ends_at null to leave the round open until someone ends it. Only manual boards can move a round's end.
       parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
@@ -1098,7 +1061,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}/end:
     post:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: End the running round of a manual leaderboard now
       parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
       requestBody:
@@ -1110,7 +1073,7 @@ paths:
   /v1/admin/leaderboards/{leaderboardId}/rounds/{roundId}/cancel:
     post:
       tags: [Administration]
-      security: [{ adminKey: [] }, { adminSession: [] }, { accessToken: [] }]
+      security: [{ adminKey: [] }, { adminSession: [] }, { accessKeyBearer: [] }]
       summary: Cancel a round that has not started
       parameters: [{ $ref: '#/components/parameters/LeaderboardId' }, { $ref: '#/components/parameters/RoundId' }]
       requestBody:
@@ -1159,7 +1122,7 @@ paths:
   /v1/admin/currencies/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Rename a currency or change its unit scale
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id, name], properties: { tenant_id: { type: string }, environment_id: { type: string }, name: { type: string }, unit_scale: { type: integer, minimum: 0, maximum: 6 } } } } } }
@@ -1167,7 +1130,7 @@ paths:
   /v1/admin/missions/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update a mission
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id] } } } }
@@ -1175,7 +1138,7 @@ paths:
   /v1/admin/achievements/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update an achievement
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AchievementRequest' } } } }
@@ -1183,7 +1146,7 @@ paths:
   /v1/admin/levels/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update a level
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LevelRequest' } } } }
@@ -1191,7 +1154,7 @@ paths:
   /v1/admin/rewards/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update a reward
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RewardRequest' } } } }
@@ -1199,7 +1162,7 @@ paths:
   /v1/admin/goals/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update a goal
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/GoalRequest' } } } }
@@ -1207,7 +1170,7 @@ paths:
   /v1/admin/campaigns/{resourceId}:
     patch:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Update a campaign
       parameters: [{ $ref: '#/components/parameters/ResourceId' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CampaignRequest' } } } }
@@ -1215,7 +1178,7 @@ paths:
   /v1/admin/analytics/query:
     get:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Query one report measure as a total and a time series
       parameters:
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
@@ -1230,7 +1193,7 @@ paths:
   /v1/admin/reports/dashboard:
     get:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Read the saved report dashboard layout
       parameters:
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
@@ -1238,49 +1201,86 @@ paths:
       responses: { '200': { description: Dashboard widgets } }
     put:
       tags: [Administration]
-      security: [{ adminSession: [] }, { accessToken: [] }, { adminKey: [] }]
+      security: [{ adminSession: [] }, { accessKeyBearer: [] }, { adminKey: [] }]
       summary: Replace the report dashboard layout
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [tenant_id, environment_id, widgets], properties: { tenant_id: { type: string }, environment_id: { type: string }, widgets: { type: array, items: { type: object } } } } } } }
       responses: { '200': { description: Dashboard saved } }
-  /v1/admin/access-tokens:
+  /v1/admin/access-keys:
     get:
       tags: [Administration]
-      security: [{ adminSession: [] }]
-      summary: List workspace access tokens
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: List access keys
+      description: Requires an administrator session or the bootstrap admin key; access keys are refused. Secrets are never returned.
       parameters:
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
+        - { name: environment_id, in: query, schema: { type: string }, description: Only keys of this environment }
       responses:
-        '200': { description: Tokens without their secrets, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/AccessToken' } } } } }
+        '200': { description: Keys without their secrets, content: { application/json: { schema: { type: object, properties: { access_keys: { type: array, items: { $ref: '#/components/schemas/AccessKey' } } } } } } }
     post:
       tags: [Administration]
-      security: [{ adminSession: [] }]
-      summary: Create a workspace access token
-      description: Requires a signed-in administrator session. The raw token is returned once.
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: Create an access key
+      description: Requires an administrator session or the bootstrap admin key; access keys are refused. The raw key is returned once and stored only as a SHA-256 hash.
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: '#/components/schemas/AccessTokenRequest' } } }
+        content: { application/json: { schema: { $ref: '#/components/schemas/AccessKeyRequest' } } }
       responses:
         '201':
-          description: Token created
-          content: { application/json: { schema: { type: object, properties: { token: { type: string, example: motif_at_… }, access_token: { $ref: '#/components/schemas/AccessToken' } } } } }
-        '403': { description: Not signed in with a session }
-  /v1/admin/access-tokens/{tokenId}/revoke:
-    post:
+          description: Key created
+          content: { application/json: { schema: { type: object, properties: { key: { type: string, example: motif_key_… }, access_key: { $ref: '#/components/schemas/AccessKey' } } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/admin/access-keys/{keyId}:
+    patch:
       tags: [Administration]
-      security: [{ adminSession: [] }]
-      summary: Revoke a workspace access token
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: Change an access key's name, scopes or allowed origins
+      description: The secret, environment and expiry cannot be changed. Omitted fields keep their value; an empty allowed_origins list allows every origin.
       parameters:
-        - { name: tokenId, in: path, required: true, schema: { type: string } }
+        - { name: keyId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AccessKeyUpdate' } } }
+      responses:
+        '200': { description: Key updated, content: { application/json: { schema: { $ref: '#/components/schemas/AccessKey' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: Delete an access key
+      parameters:
+        - { name: keyId, in: path, required: true, schema: { type: string } }
         - { name: tenant_id, in: query, required: true, schema: { type: string } }
       responses:
-        '200': { description: Token revoked, content: { application/json: { schema: { $ref: '#/components/schemas/AccessToken' } } } }
+        '204': { description: Key deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/admin/access-keys/{keyId}/revoke:
+    post:
+      tags: [Administration]
+      security: [{ adminSession: [] }, { adminKey: [] }]
+      summary: Revoke an access key
+      description: A revoked key stops working and stays listed.
+      parameters:
+        - { name: keyId, in: path, required: true, schema: { type: string } }
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Key revoked, content: { application/json: { schema: { $ref: '#/components/schemas/AccessKey' } } } }
         '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
-    integrationKey:
+    accessKey:
       type: apiKey
       in: header
       name: X-Motif-API-Key
+      description: >-
+        An access key (motif_key_…) created by a workspace admin. It belongs to one environment of one
+        workspace, which it selects. GET needs the read scope, POST needs write, PATCH and PUT need edit,
+        and DELETE needs delete. A missing key returns 401 missing_api_key; an unknown, revoked or expired
+        key returns 401 invalid_api_key; a key without the needed scope returns 403 insufficient_scope.
+        When a key lists allowed origins, browser requests from any other Origin return 403
+        origin_not_allowed. Requests without an Origin header are judged by key and scopes only, so keep
+        keys that can write on the server.
     adminKey:
       type: apiKey
       in: header
@@ -1288,16 +1288,19 @@ components:
     adminSession:
       type: http
       scheme: bearer
-    accessToken:
+    accessKeyBearer:
       type: http
       scheme: bearer
-      bearerFormat: motif_at_…
+      bearerFormat: motif_key_…
       description: >-
-        A long-lived workspace token created in the console. It is confined to one workspace and,
-        optionally, to listed environments. Scopes: read allows GET routes and read-only checks and
-        reports, write allows configuration changes and test events, publish allows publishing rule
-        versions. Tokens never reach credentials, reward providers, point transactions, redemptions,
-        token management or platform administration.
+        An access key with the mcp scope (which requires read), sent as a bearer token. This is how the
+        MCP server reaches the admin API; without mcp a key only reaches the integration API. It is
+        confined to the key's environment. Scopes: read allows GET routes and read-only checks and
+        reports; write allows creating things such as catalog items, rule drafts, leaderboards, rounds
+        and test events; edit allows changing existing things, including publishing rule versions and
+        updating or ending leaderboard rounds; delete allows deleting leaderboards. Access keys never
+        reach access key management, reward providers, point transactions, redemptions or platform
+        administration.
   parameters:
     ExternalUserId: { name: externalUserId, in: path, required: true, schema: { type: string } }
     ExternalEventId: { name: externalEventId, in: path, required: true, schema: { type: string } }
@@ -1430,25 +1433,6 @@ components:
     Error:
       type: object
       properties: { error: { type: object, properties: { code: { type: string }, message: { type: string } } } }
-    CredentialRequest:
-      type: object
-      required: [tenant_id, environment_id, label]
-      properties:
-        tenant_id: { type: string }
-        environment_id: { type: string }
-        label: { type: string, maxLength: 80 }
-    Credential:
-      type: object
-      properties:
-        id: { type: integer, format: int64 }
-        tenant_id: { type: string }
-        environment_id: { type: string }
-        label: { type: string }
-        created_at: { type: string, format: date-time }
-        last_used_at: { type: string, format: date-time, nullable: true }
-        revoked_at: { type: string, format: date-time, nullable: true }
-        active: { type: boolean }
-        integration_api_key: { type: string, description: Present only immediately after create or rotate }
     AuditEntry:
       type: object
       properties:
@@ -1773,29 +1757,41 @@ components:
         type: { type: string, enum: [award, spend] }
         idempotency_key: { type: string }
         provenance: { type: object }
-    AccessTokenRequest:
+    AccessKeyRequest:
       type: object
-      required: [tenant_id, name, scopes]
+      required: [tenant_id, environment_id, name, scopes]
+      properties:
+        tenant_id: { type: string }
+        environment_id: { type: string, description: The one environment the key belongs to }
+        name: { type: string, maxLength: 80 }
+        scopes: { type: array, minItems: 1, items: { type: string, enum: [read, write, edit, delete, mcp] }, description: mcp requires read }
+        allowed_origins: { type: array, maxItems: 20, items: { type: string, example: 'https://shop.example.com' }, description: 'Browser origins as scheme://host[:port]. Empty means any website.' }
+        expires_in_days: { type: integer, minimum: 0, maximum: 365, description: 0 means no expiry }
+    AccessKeyUpdate:
+      type: object
+      required: [tenant_id]
       properties:
         tenant_id: { type: string }
         name: { type: string, maxLength: 80 }
-        scopes: { type: array, items: { type: string, enum: [read, write, publish] }, description: Must include read }
-        environment_ids: { type: array, items: { type: string }, description: Empty means every environment of the workspace }
-        expires_in_days: { type: integer, minimum: 0, maximum: 365, description: 0 means no expiry }
-    AccessToken:
+        scopes: { type: array, minItems: 1, items: { type: string, enum: [read, write, edit, delete, mcp] } }
+        allowed_origins: { type: array, maxItems: 20, items: { type: string } }
+    AccessKey:
       type: object
       properties:
         id: { type: string }
         tenant_id: { type: string }
+        environment_id: { type: string }
         name: { type: string }
         hint: { type: string, description: Prefix and last characters for recognition }
-        scopes: { type: array, items: { type: string } }
-        environment_ids: { type: array, items: { type: string } }
-        created_by: { type: string }
+        scopes: { type: array, items: { type: string, enum: [read, write, edit, delete, mcp] } }
+        allowed_origins: { type: array, items: { type: string }, description: Empty means any website }
+        created_by: { type: string, nullable: true }
+        created_by_email: { type: string }
         expires_at: { type: string, format: date-time, nullable: true }
         last_used_at: { type: string, format: date-time, nullable: true }
         revoked_at: { type: string, format: date-time, nullable: true }
         created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     RuleCheckRequest:
       allOf:
         - $ref: '#/components/schemas/RuleRequest'

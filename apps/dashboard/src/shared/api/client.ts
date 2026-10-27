@@ -8,14 +8,11 @@ export type Tenant = {
   status: 'active' | 'suspended' | string;
 };
 
-export type TenantCreation = Tenant & { integration_api_key: string };
-
 export type Environment = {
   tenant_id: string;
   environment_id: string;
   name: string;
   created_at: string;
-  integration_api_key?: string;
 };
 
 export type AuditEntry = {
@@ -29,18 +26,6 @@ export type AuditEntry = {
   resource_id?: string;
   metadata: Record<string, unknown>;
   created_at: string;
-};
-
-export type Credential = {
-  id: number;
-  tenant_id: string;
-  environment_id: string;
-  label: string;
-  created_at: string;
-  last_used_at?: string;
-  revoked_at?: string;
-  active: boolean;
-  integration_api_key?: string;
 };
 
 export type EventType = {
@@ -157,7 +142,6 @@ export type TenantSignupResponse = {
   expires_in: number;
   admin: AdminPrincipal;
   tenant: Tenant;
-  integration_key: string;
 };
 
 export type AdminUser = {
@@ -566,7 +550,6 @@ export type UserSnapshot = {
 
 type ApiErrorPayload = { error?: { code?: string; message?: string } };
 
-const integrationKey = import.meta.env.VITE_MOTIF_API_KEY ?? (import.meta.env.DEV ? 'dev_only_change_me' : '');
 let adminSessionToken = typeof window === 'undefined' ? '' : window.localStorage.getItem('motif.admin.session') ?? '';
 
 function adminHeaders(extra: Record<string, string> = {}): Record<string, string> {
@@ -772,13 +755,13 @@ export async function createTenant(input: {
   name: string;
   environment_id: string;
   environment_name: string;
-}): Promise<TenantCreation> {
+}): Promise<Tenant> {
   const response = await fetch('/api/v1/admin/tenants', {
     method: 'POST',
     headers: adminHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(input),
   });
-  return readResponse<TenantCreation>(response);
+  return readResponse<Tenant>(response);
 }
 
 export async function updateTenantStatus(tenantId: string, status: 'active' | 'suspended'): Promise<{ tenant_id: string; status: string }> {
@@ -800,67 +783,53 @@ export async function fetchAuditLog(filters?: { tenant_id?: string; environment_
   return readResponse<AuditEntry[]>(response);
 }
 
-export type AccessTokenScope = 'read' | 'write' | 'publish';
+export type AccessKeyScope = 'read' | 'write' | 'edit' | 'delete' | 'mcp';
 
-export type AccessToken = {
+export type AccessKey = {
   id: string;
   tenant_id: string;
+  environment_id: string;
   name: string;
+  /** Empty for keys created before access keys had hints. */
   hint: string;
-  scopes: AccessTokenScope[];
-  environment_ids: string[];
-  created_by: string;
-  expires_at?: string;
-  last_used_at?: string;
-  revoked_at?: string;
+  scopes: AccessKeyScope[];
+  /** Browser origins allowed to use the key; empty allows every origin. */
+  allowed_origins: string[];
+  created_by: string | null;
+  created_by_email?: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
   created_at: string;
+  updated_at: string;
 };
 
-export async function fetchAccessTokens(tenantId: string): Promise<AccessToken[]> {
-  const response = await fetch(`/api/v1/admin/access-tokens?tenant_id=${encodeURIComponent(tenantId)}`, { headers: adminHeaders() });
-  return readResponse<AccessToken[]>(response);
+export type AccessKeyInput = { name: string; scopes: AccessKeyScope[]; allowed_origins: string[] };
+
+export async function fetchAccessKeys(scope: { tenant_id: string; environment_id: string }): Promise<AccessKey[]> {
+  const params = new URLSearchParams({ tenant_id: scope.tenant_id, environment_id: scope.environment_id });
+  const response = await fetch(`/api/v1/admin/access-keys?${params.toString()}`, { headers: adminHeaders() });
+  return (await readResponse<{ access_keys: AccessKey[] }>(response)).access_keys;
 }
 
-export async function createAccessToken(input: { tenant_id: string; name: string; scopes: AccessTokenScope[]; environment_ids: string[]; expires_in_days: number }): Promise<{ token: string; access_token: AccessToken }> {
-  const response = await fetch('/api/v1/admin/access-tokens', {
-    method: 'POST',
-    headers: adminHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(input),
-  });
-  return readResponse<{ token: string; access_token: AccessToken }>(response);
+export async function createAccessKey(scope: { tenant_id: string; environment_id: string }, input: AccessKeyInput & { expires_in_days: number }): Promise<{ key: string; access_key: AccessKey }> {
+  const response = await fetch('/api/v1/admin/access-keys', { method: 'POST', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ ...scope, ...input }) });
+  return readResponse<{ key: string; access_key: AccessKey }>(response);
 }
 
-export async function revokeAccessToken(tenantId: string, id: string): Promise<AccessToken> {
-  const response = await fetch(`/api/v1/admin/access-tokens/${encodeURIComponent(id)}/revoke?tenant_id=${encodeURIComponent(tenantId)}`, { method: 'POST', headers: adminHeaders() });
-  return readResponse<AccessToken>(response);
+export async function updateAccessKey(tenantId: string, id: string, input: AccessKeyInput): Promise<AccessKey> {
+  const response = await fetch(`/api/v1/admin/access-keys/${encodeURIComponent(id)}`, { method: 'PATCH', headers: adminHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ tenant_id: tenantId, ...input }) });
+  return readResponse<AccessKey>(response);
 }
 
-export async function fetchCredentials(filters?: { tenant_id?: string; environment_id?: string }): Promise<Credential[]> {
-  const params = new URLSearchParams();
-  if (filters?.tenant_id) params.set('tenant_id', filters.tenant_id);
-  if (filters?.environment_id) params.set('environment_id', filters.environment_id);
-  const query = params.toString();
-  const response = await fetch(`/api/v1/admin/credentials${query ? `?${query}` : ''}`, { headers: adminHeaders() });
-  return readResponse<Credential[]>(response);
+export async function revokeAccessKey(tenantId: string, id: string): Promise<AccessKey> {
+  const response = await fetch(`/api/v1/admin/access-keys/${encodeURIComponent(id)}/revoke?tenant_id=${encodeURIComponent(tenantId)}`, { method: 'POST', headers: adminHeaders() });
+  return readResponse<AccessKey>(response);
 }
 
-export async function createCredential(input: { tenant_id: string; environment_id: string; label: string }): Promise<Credential> {
-  const response = await fetch('/api/v1/admin/credentials', {
-    method: 'POST',
-    headers: adminHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(input),
-  });
-  return readResponse<Credential>(response);
-}
-
-export async function rotateCredential(id: number): Promise<Credential> {
-  const response = await fetch(`/api/v1/admin/credentials/${id}/rotate`, { method: 'POST', headers: adminHeaders() });
-  return readResponse<Credential>(response);
-}
-
-export async function revokeCredential(id: number): Promise<Credential> {
-  const response = await fetch(`/api/v1/admin/credentials/${id}/revoke`, { method: 'POST', headers: adminHeaders() });
-  return readResponse<Credential>(response);
+export async function deleteAccessKey(tenantId: string, id: string): Promise<void> {
+  const response = await fetch(`/api/v1/admin/access-keys/${encodeURIComponent(id)}?tenant_id=${encodeURIComponent(tenantId)}`, { method: 'DELETE', headers: adminHeaders() });
+  if (!response.ok) await readResponse<never>(response);
 }
 
 export async function fetchEventTypes(filters?: { tenant_id?: string; environment_id?: string }): Promise<EventType[]> {
@@ -1012,27 +981,6 @@ export async function fetchHealth(target: 'api' | 'worker'): Promise<void> {
   if (!response.ok) throw new Error(`${target} is not ready`);
 }
 
-export async function submitEvent(input: {
-  external_event_id: string;
-  event_type: string;
-  user_id: string;
-  payload: Record<string, unknown>;
-}): Promise<EventReceipt> {
-  const response = await fetch('/api/v1/events', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Motif-API-Key': integrationKey,
-    },
-    body: JSON.stringify({
-      event_id: input.external_event_id,
-      event_type: input.event_type,
-      user_id: input.user_id,
-      payload: input.payload,
-    }),
-  });
-  return readResponse<EventReceipt>(response);
-}
 
 export async function submitAdminTestEvent(input: {
   tenant_id: string;
@@ -1064,61 +1012,15 @@ export async function fetchScopedEventStatus(externalId: string, filters: { tena
   return { event_id: event.event_id, external_event_id: event.external_event_id, status: event.status };
 }
 
-export async function fetchEventStatus(externalId: string): Promise<EventReceipt> {
-  const response = await fetch(`/api/v1/events/${encodeURIComponent(externalId)}`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<EventReceipt>(response);
-}
 
-export function hasConfiguredIntegrationKey() {
-  return Boolean(import.meta.env.VITE_MOTIF_API_KEY);
-}
 
-export async function fetchUserPoints(userId: string): Promise<{ user_id: string; balances: PointBalance[] }> {
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/points`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<{ user_id: string; balances: PointBalance[] }>(response);
-}
 
-export async function fetchUserTransactions(userId: string, limit = 12, cursor?: string): Promise<{ user_id: string; transactions: PointTransaction[]; next_cursor?: string }> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (cursor) params.set('cursor', cursor);
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/points/transactions?${params.toString()}`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<{ user_id: string; transactions: PointTransaction[]; next_cursor?: string }>(response);
-}
 
-export async function fetchUserProgression(userId: string): Promise<UserProgression> {
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/progression`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<UserProgression>(response);
-}
 
-export async function fetchUserMissions(userId: string): Promise<{ user_id: string; missions: UserMission[] }> {
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/missions`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<{ user_id: string; missions: UserMission[] }>(response);
-}
 
-export async function fetchUserAchievements(userId: string): Promise<{ user_id: string; achievements: UserAchievement[] }> {
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/achievements`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<{ user_id: string; achievements: UserAchievement[] }>(response);
-}
 
 export type UserStreak = { user_id: string; event_type?: string; current_streak: number; longest_streak: number; last_active_date?: string | null };
 
-export async function fetchUserStreaks(userId: string, eventType?: string): Promise<UserStreak> {
-  const query = eventType ? `?event_type=${encodeURIComponent(eventType)}` : '';
-  const response = await fetch(`/api/v1/users/${encodeURIComponent(userId)}/streaks${query}`, { headers: { 'X-Motif-API-Key': integrationKey } });
-  return readResponse<UserStreak>(response);
-}
 
 export async function fetchAdminUserProfile(scope: { tenant_id: string; environment_id: string }, userId: string): Promise<UserSnapshot> {
   const params = new URLSearchParams({ tenant_id: scope.tenant_id, environment_id: scope.environment_id, user_id: userId });
@@ -1239,17 +1141,6 @@ export async function updateCatalogStatus(input: { tenant_id: string; environmen
   return readResponse<{ resource: string; id: string; active: boolean }>(response);
 }
 
-export async function redeemReward(rewardId: string, input: { external_user_id: string; idempotency_key: string }): Promise<Redemption> {
-  const response = await fetch(`/api/v1/rewards/${encodeURIComponent(rewardId)}/redemptions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Motif-API-Key': integrationKey,
-    },
-    body: JSON.stringify(input),
-  });
-  return readResponse<Redemption>(response);
-}
 
 export async function redeemAdminReward(scope: { tenant_id: string; environment_id: string }, rewardId: string, input: { external_user_id: string; idempotency_key: string }): Promise<Redemption> {
   const response = await fetch('/api/v1/admin/redemptions/test', {
@@ -1266,20 +1157,7 @@ export async function redeemAdminReward(scope: { tenant_id: string; environment_
   return readResponse<Redemption>(response);
 }
 
-export async function fetchRedemption(redemptionId: string): Promise<Redemption> {
-  const response = await fetch(`/api/v1/redemptions/${encodeURIComponent(redemptionId)}`, {
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<Redemption>(response);
-}
 
-export async function retryRedemption(redemptionId: string): Promise<Redemption> {
-  const response = await fetch(`/api/v1/redemptions/${encodeURIComponent(redemptionId)}/retry`, {
-    method: 'POST',
-    headers: { 'X-Motif-API-Key': integrationKey },
-  });
-  return readResponse<Redemption>(response);
-}
 
 export async function retryAdminRedemption(scope: { tenant_id: string; environment_id: string }, redemptionId: string): Promise<Redemption> {
   const response = await fetch('/api/v1/admin/redemptions/retry', {

@@ -2,7 +2,7 @@
 
 Before relying on an integration in production:
 
-- [ ] The production environment exists and the backend's integration key for it is in a server-side secret store.
+- [ ] The production environment exists, and an access key for it with only the scopes the backend needs (usually `read` and `write`) is in a server-side secret store.
 - [ ] Every event type the backend sends has a registered contract.
 - [ ] Every event has a stable `event_id` derived from the business fact.
 - [ ] `user_id` is the product's stable user ID and is present on every user-level event.

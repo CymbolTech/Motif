@@ -19,6 +19,8 @@ type fakeAPI struct {
 	mu           sync.Mutex
 	scopes       []string
 	environments []string
+	// withoutMCP answers like a key that lacks the mcp scope.
+	withoutMCP bool
 	requests     []recordedRequest
 }
 
@@ -31,7 +33,7 @@ type recordedRequest struct {
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer motif_at_valid" {
+	if r.Header.Get("Authorization") != "Bearer motif_key_valid" {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":{"code":"invalid_admin_session","message":"a valid admin session is required"}}`)
 		return
@@ -47,7 +49,12 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	write := func(value any) { _ = json.NewEncoder(w).Encode(value) }
 	switch r.URL.Path {
 	case "/v1/admin/auth/me":
-		write(map[string]any{"id": "admin_1", "email": "owner@acme.example", "role": "tenant_admin", "tenant_ids": []string{"acme"}, "source": "access_token", "token_id": "tok_1", "scopes": f.scopes, "environment_ids": f.environments})
+		if f.withoutMCP {
+			w.WriteHeader(http.StatusForbidden)
+			write(map[string]any{"error": map[string]string{"code": "admin_forbidden", "message": "not allowed"}})
+			return
+		}
+		write(map[string]any{"id": "key_1", "email": "owner@acme.example", "role": "tenant_admin", "tenant_ids": []string{"acme"}, "source": "access_key", "token_id": "key_1", "scopes": append(slices.Clone(f.scopes), "mcp"), "environment_ids": f.environments})
 	case "/v1/admin/tenants":
 		write([]map[string]any{{"tenant_id": "acme", "name": "Acme Rewards", "environment_id": "sandbox", "environment_name": "Sandbox", "status": "active"}})
 	case "/v1/admin/environments":
@@ -134,8 +141,8 @@ func call(t *testing.T, session *mcp.ClientSession, name string, arguments map[s
 	return result, text.String()
 }
 
-func TestToolsFollowTheTokenScopes(t *testing.T) {
-	readOnly, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_at_valid")
+func TestToolsFollowTheKeyScopes(t *testing.T) {
+	readOnly, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatalf("connect() error = %v", err)
 	}
@@ -147,39 +154,43 @@ func TestToolsFollowTheTokenScopes(t *testing.T) {
 	}
 	for _, hidden := range []string{"save_rule_draft", "send_test_event", "publish_rule", "create_currency"} {
 		if slices.Contains(names, hidden) {
-			t.Fatalf("read-only token should not see %s", hidden)
+			t.Fatalf("a read-only key should not see %s", hidden)
 		}
 	}
 
-	writer, err := connect(t, &fakeAPI{scopes: []string{"read", "write"}}, "motif_at_valid")
+	writer, err := connect(t, &fakeAPI{scopes: []string{"read", "write"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatalf("connect() error = %v", err)
 	}
 	names = toolNames(t, writer)
-	if !slices.Contains(names, "save_rule_draft") || slices.Contains(names, "publish_rule") {
-		t.Fatalf("write token tools = %v, want drafts without publishing", names)
+	if !slices.Contains(names, "save_rule_draft") || slices.Contains(names, "publish_rule") || slices.Contains(names, "update_catalog_item") {
+		t.Fatalf("write key tools = %v, want drafts without publishing or changing items", names)
 	}
 
-	publisher, err := connect(t, &fakeAPI{scopes: []string{"read", "write", "publish"}}, "motif_at_valid")
+	editor, err := connect(t, &fakeAPI{scopes: []string{"read", "edit"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatalf("connect() error = %v", err)
 	}
-	if !slices.Contains(toolNames(t, publisher), "publish_rule") {
-		t.Fatal("publish token should see publish_rule")
+	names = toolNames(t, editor)
+	if !slices.Contains(names, "publish_rule") || !slices.Contains(names, "update_catalog_item") || slices.Contains(names, "save_rule_draft") {
+		t.Fatalf("edit key tools = %v, want publishing and updates without drafts", names)
 	}
 }
 
 func TestInvalidTokensCannotConnect(t *testing.T) {
-	if _, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_at_revoked"); err == nil {
+	if _, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_key_revoked"); err == nil {
 		t.Fatal("a token the API rejects must not connect")
 	}
 	if _, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "an-admin-session-token"); err == nil {
-		t.Fatal("only workspace access tokens may connect")
+		t.Fatal("only access keys may connect")
+	}
+	if _, err := connect(t, &fakeAPI{scopes: []string{"read"}, withoutMCP: true}, "motif_key_valid"); err == nil || !strings.Contains(err.Error(), "Unauthorized") {
+		t.Fatalf("a key without the mcp scope must not connect, err = %v", err)
 	}
 }
 
 func TestWorkspaceOutputHidesWorkspaceIdentifiers(t *testing.T) {
-	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_at_valid")
+	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,12 +202,12 @@ func TestWorkspaceOutputHidesWorkspaceIdentifiers(t *testing.T) {
 		t.Fatalf("get_workspace leaked workspace identifiers: %s", text)
 	}
 	if strings.Contains(text, "production") {
-		t.Fatalf("an environment-restricted token should only list its environments: %s", text)
+		t.Fatalf("a key should only list its environment: %s", text)
 	}
 }
 
 func TestEnvironmentMustBeChosenWhenSeveralAreAvailable(t *testing.T) {
-	session, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_at_valid")
+	session, err := connect(t, &fakeAPI{scopes: []string{"read"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,13 +217,13 @@ func TestEnvironmentMustBeChosenWhenSeveralAreAvailable(t *testing.T) {
 	}
 	result, _ = call(t, session, "list_event_types", map[string]any{"environment": "staging"})
 	if !result.IsError {
-		t.Fatal("an environment outside the token must be rejected before calling the API")
+		t.Fatal("an environment outside the key must be rejected before calling the API")
 	}
 }
 
 func TestCheckRuleSendsTheScopedRuleAndSample(t *testing.T) {
 	api := &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}
-	session, err := connect(t, api, "motif_at_valid")
+	session, err := connect(t, api, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,13 +244,13 @@ func TestCheckRuleSendsTheScopedRuleAndSample(t *testing.T) {
 
 func TestAPIErrorsCarryRecoveryHints(t *testing.T) {
 	err := (&APIError{Status: http.StatusForbidden, Code: "admin_forbidden", Message: "not allowed"}).Error()
-	if !strings.Contains(err, "permission") {
-		t.Fatalf("APIError = %q, want a permission hint", err)
+	if !strings.Contains(err, "scope") {
+		t.Fatalf("APIError = %q, want a scope hint", err)
 	}
 }
 
 func TestDocsAreServedAsToolAndResources(t *testing.T) {
-	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_at_valid")
+	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +271,7 @@ func TestDocsAreServedAsToolAndResources(t *testing.T) {
 }
 
 func TestPromptsAreAvailable(t *testing.T) {
-	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_at_valid")
+	session, err := connect(t, &fakeAPI{scopes: []string{"read"}, environments: []string{"sandbox"}}, "motif_key_valid")
 	if err != nil {
 		t.Fatal(err)
 	}

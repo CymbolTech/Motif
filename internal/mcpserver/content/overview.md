@@ -16,10 +16,9 @@ product backend ── POST /v1/events (X-Motif-API-Key) ──▶ durable recei
 
 | Concept | What it is | Use it when |
 | --- | --- | --- |
-| Workspace | Your organization in MotifEngine | Always; an access token belongs to exactly one |
+| Workspace | Your organization in MotifEngine | Always; an access key belongs to exactly one |
 | Environment | An isolated scope such as `sandbox` or `production` | Test without touching live balances; everything below is per environment |
-| Integration key | A server-side REST key for one environment (`X-Motif-API-Key`) | The product backend sends events and reads user state |
-| Access token | A workspace token (`motif_at_…`) for MCP clients and scripts | Configuring and inspecting the workspace |
+| Access key | A secret (`motif_key_…`) for one environment with scopes: `read`, `write`, `edit`, `delete`, `mcp` | The product backend calls REST with it in `X-Motif-API-Key`; MCP clients need the `mcp` scope |
 | External user ID | The product's own stable user ID, sent as `user_id` | Every user-level effect |
 | Event | A fact that happened in the product | An action should be measured or rewarded |
 | Event contract | A versioned payload schema for an event type | Reject malformed payloads before rules see them |
@@ -34,6 +33,6 @@ product backend ── POST /v1/events (X-Motif-API-Key) ──▶ durable recei
 
 ## Who does what
 
-- **This MCP server** configures and inspects a workspace: event contracts, catalog, rule drafts, publishing (with permission), test events, traces and diagnostics.
-- **The product backend** sends real events and reads user state over REST with the environment's integration key. MCP is never the event path.
+- **This MCP server** configures and inspects a workspace: event contracts, catalog, rule drafts, publishing (with the `edit` scope), test events, traces and diagnostics.
+- **The product backend** sends real events and reads user state over REST with an access key of the environment. MCP is never the event path.
 - **The product's own UI** renders balances, levels, missions, achievements, rewards and leaderboards. MotifEngine ships no end-user widgets.

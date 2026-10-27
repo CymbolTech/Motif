@@ -14,4 +14,4 @@ Design within what the engine does today:
 10. **Conversion rates are explicit** in each conversion request.
 11. **Moderation and anti-abuse stay in the product.** Emit events only after the product has decided the action counts.
 12. **Leaderboards rank earnings only**, in points of one currency or XP. Ranking by event counts, balances or teams is not supported.
-13. **This MCP server configures and inspects.** It never sends production traffic, holds integration keys, moves points, redeems rewards or configures delivery providers.
+13. **This MCP server configures and inspects.** It never sends production traffic, holds access keys, moves points, redeems rewards or configures delivery providers.

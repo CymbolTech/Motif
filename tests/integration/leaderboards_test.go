@@ -34,13 +34,13 @@ type leaderboardAPI struct {
 
 func newLeaderboardAPI(t *testing.T, db *pgxpool.Pool) leaderboardAPI {
 	t.Helper()
-	if _, err := db.Exec(context.Background(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash) VALUES ('integration-tenant', 'sandbox', $1)`, auth.Digest(leaderboardAPIKey)); err != nil {
+	if _, err := db.Exec(context.Background(), `INSERT INTO access_keys (id, tenant_id, environment_id, name, key_hash, scopes) VALUES (md5(random()::text), 'integration-tenant', 'sandbox', 'test', $1, ARRAY['read', 'write'])`, auth.Digest(leaderboardAPIKey)); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/leaderboards", leaderboards.NewHandler(db))
-	mux.Handle("/v1/leaderboards/", leaderboards.NewHandler(db))
-	mux.Handle("/v1/users/", points.NewHandler(db))
+	mux.Handle("/v1/leaderboards", keyed(db, leaderboards.NewHandler(db)))
+	mux.Handle("/v1/leaderboards/", keyed(db, leaderboards.NewHandler(db)))
+	mux.Handle("/v1/users/", keyed(db, points.NewHandler(db)))
 	api := leaderboardAPI{t: t, admin: httptest.NewServer(admin.NewHandler(db, leaderboardAdminKey)), public: httptest.NewServer(mux), balance: points.NewLedger(db)}
 	t.Cleanup(api.admin.Close)
 	t.Cleanup(api.public.Close)

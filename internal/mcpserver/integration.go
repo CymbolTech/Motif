@@ -15,7 +15,7 @@ import (
 )
 
 type snippetInput struct {
-	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional when the token can use exactly one environment."`
+	Environment string `json:"environment,omitempty" jsonschema:"Environment id. Optional: an access key reaches exactly one environment."`
 	EventType   string `json:"event_type" jsonschema:"The event type to send, ideally with a registered contract"`
 	Language    string `json:"language" jsonschema:"The backend language"`
 }
@@ -35,7 +35,7 @@ type snippetData struct {
 func registerIntegrationTools(server *mcp.Server, session *Session) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_integration_snippet",
-		Description: "Generate server-side code that sends one event type to MotifEngine from the product's backend: a payload shaped by the registered contract, an event_id derived from the business fact, the integration key read from a server-side secret, and retries that keep the same event_id.",
+		Description: "Generate server-side code that sends one event type to MotifEngine from the product's backend: a payload shaped by the registered contract, an event_id derived from the business fact, the access key read from a server-side secret, and retries that keep the same event_id.",
 		Annotations: readOnly("Integration code"),
 		InputSchema: snippetSchema,
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input snippetInput) (*mcp.CallToolResult, any, error) {
@@ -55,7 +55,7 @@ func registerIntegrationTools(server *mcp.Server, session *Session) {
 		}
 		notes := []string{
 			"Send from the server at the moment the fact becomes true (payment captured, lesson graded), never from a browser or mobile app.",
-			"Set MOTIF_API_URL and MOTIF_API_KEY in the server environment. MOTIF_API_KEY is the REST integration key of the " + environment + " environment, kept in the secret store; this server cannot read it.",
+			"Set MOTIF_API_URL and MOTIF_API_KEY in the server environment. MOTIF_API_KEY is an access key of the " + environment + " environment with the write scope, kept in the secret store; this server cannot read it.",
 			"The event_id must identify the business fact so a retry reuses it. Adjust the derivation if the chosen field is not unique per fact.",
 			"Retry 5xx, 429 and network errors with the same event_id. Stop on 409 (event_id reused with different content) and 422 (payload breaks the contract).",
 		}
@@ -74,7 +74,7 @@ func registerIntegrationTools(server *mcp.Server, session *Session) {
 		if err != nil {
 			return nil, nil, err
 		}
-		return nil, map[string]any{"environment": environment, "language": input.Language, "code": code, "environment_variables": map[string]string{"MOTIF_API_URL": session.PublicAPIURL, "MOTIF_API_KEY": "the " + environment + " integration key"}, "notes": notes}, nil
+		return nil, map[string]any{"environment": environment, "language": input.Language, "code": code, "environment_variables": map[string]string{"MOTIF_API_URL": session.PublicAPIURL, "MOTIF_API_KEY": "an access key of " + environment + " with the write scope"}, "notes": notes}, nil
 	})
 }
 
@@ -309,7 +309,7 @@ curl -X POST "${MOTIF_API_URL:-{{.APIURL}}}/v1/events" \
   "payload": {{.PayloadJSON}}
 }'
 `,
-	"typescript": `// Server-side only: the integration key must never reach a browser or mobile app.
+	"typescript": `// Server-side only: the access key must never reach a browser or mobile app.
 const MOTIF_API_URL = process.env.MOTIF_API_URL ?? '{{.APIURL}}';
 const MOTIF_API_KEY = process.env.MOTIF_API_KEY;
 

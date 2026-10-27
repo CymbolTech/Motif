@@ -21,7 +21,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/motifengine/motifengine/internal/adminauth"
 	"github.com/motifengine/motifengine/internal/audit"
-	"github.com/motifengine/motifengine/internal/auth"
 	"github.com/motifengine/motifengine/internal/entitlements"
 	eventdomain "github.com/motifengine/motifengine/internal/events"
 	"github.com/motifengine/motifengine/internal/points"
@@ -84,23 +83,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(adminauth.WithPrincipal(r.Context(), principal))
-	if principal.IsAccessToken() {
-		r = r.WithContext(audit.WithActor(r.Context(), audit.Actor{Type: adminauth.SourceAccessToken, ID: principal.TokenID, Client: clientLabel(r)}))
+	if principal.IsAccessKey() {
+		r = r.WithContext(audit.WithActor(r.Context(), audit.Actor{Type: adminauth.SourceAccessKey, ID: principal.TokenID, Client: clientLabel(r)}))
 	}
 	if r.URL.Path == "/v1/admin/auth/me" && r.Method == http.MethodGet {
 		writeJSON(w, http.StatusOK, principalResponse(principal))
 		return
 	}
-	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/access-tokens" {
-		h.listAccessTokens(w, r)
-		return
-	}
-	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/access-tokens" {
-		h.createAccessToken(w, r)
-		return
-	}
-	if r.Method == http.MethodPost && isAccessTokenRevokePath(r.URL.Path) {
-		h.revokeAccessToken(w, r)
+	if isAccessKeyPath(r.URL.Path) {
+		h.serveAccessKeys(w, r)
 		return
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/rules/check" {
@@ -137,22 +128,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/environments" {
 		h.createEnvironment(w, r)
-		return
-	}
-	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/credentials" {
-		h.listCredentials(w, r)
-		return
-	}
-	if r.Method == http.MethodPost && r.URL.Path == "/v1/admin/credentials" {
-		h.createCredential(w, r)
-		return
-	}
-	if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/admin/credentials/") && strings.HasSuffix(r.URL.Path, "/rotate") {
-		h.rotateCredential(w, r)
-		return
-	}
-	if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/admin/credentials/") && strings.HasSuffix(r.URL.Path, "/revoke") {
-		h.revokeCredential(w, r)
 		return
 	}
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/admin/audit-log" {
@@ -444,7 +419,7 @@ type adminPrincipalResponse struct {
 
 func principalResponse(principal adminauth.Principal) adminPrincipalResponse {
 	response := adminPrincipalResponse{ID: principal.ID, Email: principal.Email, Role: principal.Role, TenantIDs: principal.TenantIDs, Source: principal.Source}
-	if principal.IsAccessToken() {
+	if principal.IsAccessKey() {
 		response.TokenID, response.Scopes, response.EnvironmentIDs = principal.TokenID, principal.Scopes, principal.EnvironmentIDs
 	}
 	return response
@@ -499,11 +474,6 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "admin_user_exists", "an account with this email already exists")
 		return
 	}
-	integrationKey, err := generateIntegrationKey()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
-		return
-	}
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace could not be created")
@@ -520,10 +490,6 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO environments (tenant_id, id, name) VALUES ($1, $2, $3)`, validated.TenantID, validated.EnvironmentID, validated.EnvironmentName); err != nil {
 		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace environment could not be created")
-		return
-	}
-	if _, err := tx.Exec(r.Context(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by) VALUES ($1, $2, $3, 'default', 'tenant_signup')`, validated.TenantID, validated.EnvironmentID, auth.Digest(integrationKey)); err != nil {
-		writeError(w, http.StatusInternalServerError, "signup_failed", "workspace credential could not be created")
 		return
 	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO tenant_plans (tenant_id, plan_id) VALUES ($1, 'starter')`, validated.TenantID); err != nil {
@@ -551,11 +517,10 @@ func (h *Handler) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: validated.TenantID, EnvironmentID: validated.EnvironmentID, ActorType: "tenant_admin", ActorID: user.ID, Action: "tenant.signup", ResourceType: "tenant", ResourceID: validated.TenantID})
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":           token,
-		"expires_in":      int(adminauth.SessionTTL.Seconds()),
-		"admin":           principalResponse(principal),
-		"tenant":          tenantResponse{TenantID: validated.TenantID, Name: validated.Name, EnvironmentID: validated.EnvironmentID, EnvironmentName: validated.EnvironmentName, Status: "active"},
-		"integration_key": integrationKey,
+		"token":      token,
+		"expires_in": int(adminauth.SessionTTL.Seconds()),
+		"admin":      principalResponse(principal),
+		"tenant":     tenantResponse{TenantID: validated.TenantID, Name: validated.Name, EnvironmentID: validated.EnvironmentID, EnvironmentName: validated.EnvironmentName, Status: "active"},
 	})
 }
 
@@ -634,11 +599,11 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 	if principal.IsSuperAdmin() {
 		return true
 	}
-	if principal.IsAccessToken() && !accessTokenAllows(r, principal) {
+	if principal.IsAccessKey() && !accessKeyAllows(r, principal) {
 		return false
 	}
 	path := r.URL.Path
-	forbidden := []string{"/v1/admin/tenants", "/v1/admin/credentials", "/v1/admin/plans", "/v1/admin/tenant-plans", "/v1/admin/admin-users"}
+	forbidden := []string{"/v1/admin/tenants", "/v1/admin/plans", "/v1/admin/tenant-plans", "/v1/admin/admin-users"}
 	for _, prefix := range forbidden {
 		if prefix == "/v1/admin/tenants" && path == prefix && r.Method == http.MethodGet {
 			continue
@@ -660,7 +625,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 		// Rule version and publish actions do not carry a tenant body. They must
 		// carry the selected scope in the query string so tenant administrators
 		// can be authorized before the handler looks up the rule by id.
-		if isScopedRuleAction(r.URL.Path) || isAccessTokenRevokePath(r.URL.Path) {
+		if isScopedRuleAction(r.URL.Path) || (isAccessKeyPath(path) && (r.Method == http.MethodDelete || strings.HasSuffix(path, "/revoke"))) {
 			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
 		}
 		if r.Method == http.MethodPost && isLeaderboardWritePath(path) {
@@ -670,7 +635,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 			return principal.AllowsTenant(strings.TrimSpace(r.URL.Query().Get("tenant_id")))
 		}
 		allowedCreate := map[string]bool{
-			"/v1/admin/access-tokens":        true,
+			"/v1/admin/access-keys":          true,
 			"/v1/admin/rules/check":          true,
 			"/v1/admin/event-types":          true,
 			"/v1/admin/environments":         true,
@@ -710,7 +675,7 @@ func (h *Handler) allowedRoute(r *http.Request, principal adminauth.Principal) b
 }
 
 func isEditableAdminResourcePath(path string) bool {
-	for _, resource := range []string{"currencies", "missions", "goals", "campaigns", "rewards", "achievements", "levels", "leaderboards"} {
+	for _, resource := range []string{"currencies", "missions", "goals", "campaigns", "rewards", "achievements", "levels", "leaderboards", "access-keys"} {
 		if strings.HasPrefix(path, "/v1/admin/"+resource+"/") {
 			return true
 		}
@@ -794,27 +759,13 @@ type tenantResponse struct {
 	EnvironmentID   string `json:"environment_id"`
 	EnvironmentName string `json:"environment_name"`
 	Status          string `json:"status"`
-	IntegrationKey  string `json:"integration_api_key,omitempty"`
 }
 
 type environmentResponse struct {
-	TenantID       string    `json:"tenant_id"`
-	ID             string    `json:"environment_id"`
-	Name           string    `json:"name"`
-	CreatedAt      time.Time `json:"created_at"`
-	IntegrationKey string    `json:"integration_api_key,omitempty"`
-}
-
-type credentialResponse struct {
-	ID             int64      `json:"id"`
-	TenantID       string     `json:"tenant_id"`
-	EnvironmentID  string     `json:"environment_id"`
-	Label          string     `json:"label"`
-	CreatedAt      time.Time  `json:"created_at"`
-	LastUsedAt     *time.Time `json:"last_used_at,omitempty"`
-	RevokedAt      *time.Time `json:"revoked_at,omitempty"`
-	Active         bool       `json:"active"`
-	IntegrationKey string     `json:"integration_api_key,omitempty"`
+	TenantID  string    `json:"tenant_id"`
+	ID        string    `json:"environment_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type eventTypeResponse struct {
@@ -1097,12 +1048,6 @@ func (h *Handler) createTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_tenant", err.Error())
 		return
 	}
-	integrationKey, err := generateIntegrationKey()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
-		return
-	}
-	keyHash := auth.Digest(integrationKey)
 	tx, err := h.db.Begin(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "tenant_creation_failed", "tenant could not be created")
@@ -1121,10 +1066,6 @@ func (h *Handler) createTenant(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by) VALUES ($1, $2, $3, 'default', 'platform_admin')`, request.TenantID, request.EnvironmentID, keyHash); err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_creation_failed", "integration credential could not be created")
-		return
-	}
 	if _, err := tx.Exec(r.Context(), `INSERT INTO tenant_plans (tenant_id, plan_id) VALUES ($1, 'starter')`, request.TenantID); err != nil {
 		writeError(w, http.StatusInternalServerError, "plan_assignment_failed", "starter plan could not be assigned")
 		return
@@ -1134,7 +1075,7 @@ func (h *Handler) createTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "tenant.created", ResourceType: "tenant", ResourceID: request.TenantID, Metadata: auditMetadata(map[string]any{"environment_id": request.EnvironmentID, "plan_id": "starter"})})
-	writeJSON(w, http.StatusCreated, tenantResponse{TenantID: request.TenantID, Name: request.Name, EnvironmentID: request.EnvironmentID, EnvironmentName: request.EnvironmentName, Status: "active", IntegrationKey: integrationKey})
+	writeJSON(w, http.StatusCreated, tenantResponse{TenantID: request.TenantID, Name: request.Name, EnvironmentID: request.EnvironmentID, EnvironmentName: request.EnvironmentName, Status: "active"})
 }
 
 func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
@@ -1149,10 +1090,9 @@ func (h *Handler) listTenants(w http.ResponseWriter, r *http.Request) {
 			SELECT t.id, t.name, e.id, e.name, t.status
 			FROM tenants t
 			JOIN environments e ON e.tenant_id = t.id
-			JOIN admin_memberships m ON m.tenant_id = t.id
-			WHERE m.admin_user_id = $1
+			WHERE t.id = ANY($1)
 			ORDER BY t.id, e.id`
-		args = append(args, principal.ID)
+		args = append(args, principal.TenantIDs)
 	}
 	rows, err := h.db.Query(r.Context(), query, args...)
 	if err != nil {
@@ -1215,18 +1155,7 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_environment", err.Error())
 		return
 	}
-	integrationKey, err := generateIntegrationKey()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
-		return
-	}
-	tx, err := h.db.Begin(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
-		return
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	if _, err := tx.Exec(r.Context(), `INSERT INTO environments (tenant_id, id, name) VALUES ($1, $2, $3)`, request.TenantID, request.ID, request.Name); err != nil {
+	if _, err := h.db.Exec(r.Context(), `INSERT INTO environments (tenant_id, id, name) VALUES ($1, $2, $3)`, request.TenantID, request.ID, request.Name); err != nil {
 		if isUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "environment_exists", "environment already exists")
 			return
@@ -1238,16 +1167,8 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
 		return
 	}
-	if _, err := tx.Exec(r.Context(), `INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by) VALUES ($1, $2, $3, 'default', 'platform_admin')`, request.TenantID, request.ID, auth.Digest(integrationKey)); err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_creation_failed", "integration credential could not be created")
-		return
-	}
-	if err := tx.Commit(r.Context()); err != nil {
-		writeError(w, http.StatusInternalServerError, "environment_creation_failed", "environment could not be created")
-		return
-	}
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.ID, ActorType: "platform_admin", Action: "environment.created", ResourceType: "environment", ResourceID: request.ID})
-	writeJSON(w, http.StatusCreated, environmentResponse{TenantID: request.TenantID, ID: request.ID, Name: request.Name, CreatedAt: time.Now().UTC(), IntegrationKey: integrationKey})
+	writeJSON(w, http.StatusCreated, environmentResponse{TenantID: request.TenantID, ID: request.ID, Name: request.Name, CreatedAt: time.Now().UTC()})
 }
 
 func (h *Handler) updateTenantStatus(w http.ResponseWriter, r *http.Request) {
@@ -1280,132 +1201,6 @@ func (h *Handler) updateTenantStatus(w http.ResponseWriter, r *http.Request) {
 	metadata, _ := json.Marshal(map[string]string{"status": request.Status})
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: tenantID, ActorType: "platform_admin", Action: "tenant.status_changed", ResourceType: "tenant", ResourceID: tenantID, Metadata: metadata})
 	writeJSON(w, http.StatusOK, map[string]string{"tenant_id": tenantID, "status": request.Status})
-}
-
-func (h *Handler) createCredential(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		TenantID      string `json:"tenant_id"`
-		EnvironmentID string `json:"environment_id"`
-		Label         string `json:"label"`
-	}
-	if err := appruntime.DecodeJSON(http.MaxBytesReader(w, r.Body, 8*1024), &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
-		return
-	}
-	request.TenantID = strings.TrimSpace(request.TenantID)
-	request.EnvironmentID = strings.TrimSpace(request.EnvironmentID)
-	request.Label = strings.TrimSpace(request.Label)
-	if !identifierPattern.MatchString(request.TenantID) || !identifierPattern.MatchString(request.EnvironmentID) || request.Label == "" || len(request.Label) > 80 {
-		writeError(w, http.StatusBadRequest, "invalid_credential", "tenant_id, environment_id, and a label are required")
-		return
-	}
-	key, err := generateIntegrationKey()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
-		return
-	}
-	result := credentialResponse{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, Label: request.Label, IntegrationKey: key, Active: true}
-	if err := h.db.QueryRow(r.Context(), `
-		INSERT INTO integration_credentials (tenant_id, environment_id, key_hash, label, created_by)
-		VALUES ($1, $2, $3, $4, 'platform_admin')
-		RETURNING id, created_at`, request.TenantID, request.EnvironmentID, auth.Digest(key), request.Label).Scan(&result.ID, &result.CreatedAt); err != nil {
-		if isUniqueViolation(err) {
-			writeError(w, http.StatusConflict, "credential_exists", "an active credential already exists for this environment")
-			return
-		}
-		if isForeignKeyViolation(err) {
-			writeError(w, http.StatusNotFound, "environment_not_found", "tenant environment was not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "credential_creation_failed", "integration credential could not be created")
-		return
-	}
-	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, EnvironmentID: request.EnvironmentID, ActorType: "platform_admin", Action: "credential.created", ResourceType: "credential", ResourceID: strconv.FormatInt(result.ID, 10), Metadata: auditMetadata(map[string]any{"label": request.Label})})
-	writeJSON(w, http.StatusCreated, result)
-}
-
-func (h *Handler) listCredentials(w http.ResponseWriter, r *http.Request) {
-	tenantID := r.URL.Query().Get("tenant_id")
-	environmentID := r.URL.Query().Get("environment_id")
-	rows, err := h.db.Query(r.Context(), `
-		SELECT id, tenant_id, environment_id, label, created_at, last_used_at, revoked_at
-		FROM integration_credentials
-		WHERE ($1 = '' OR tenant_id = $1) AND ($2 = '' OR environment_id = $2)
-		ORDER BY created_at DESC, id DESC`, tenantID, environmentID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credentials could not be read")
-		return
-	}
-	defer rows.Close()
-	result := make([]credentialResponse, 0)
-	for rows.Next() {
-		var credential credentialResponse
-		if err := rows.Scan(&credential.ID, &credential.TenantID, &credential.EnvironmentID, &credential.Label, &credential.CreatedAt, &credential.LastUsedAt, &credential.RevokedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credentials could not be read")
-			return
-		}
-		credential.Active = credential.RevokedAt == nil
-		result = append(result, credential)
-	}
-	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_lookup_failed", "credentials could not be read")
-		return
-	}
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handler) rotateCredential(w http.ResponseWriter, r *http.Request) {
-	id, ok := credentialIDFromPath(r.URL.Path, "/rotate")
-	if !ok {
-		writeError(w, http.StatusNotFound, "credential_not_found", "credential was not found")
-		return
-	}
-	key, err := generateIntegrationKey()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "key_generation_failed", "integration key could not be generated")
-		return
-	}
-	var result credentialResponse
-	err = h.db.QueryRow(r.Context(), `
-		UPDATE integration_credentials
-		SET key_hash = $2, revoked_at = NULL, last_used_at = NULL
-		WHERE id = $1
-		RETURNING id, tenant_id, environment_id, label, created_at, last_used_at, revoked_at`, id, auth.Digest(key)).Scan(&result.ID, &result.TenantID, &result.EnvironmentID, &result.Label, &result.CreatedAt, &result.LastUsedAt, &result.RevokedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "credential_not_found", "credential was not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_rotation_failed", "credential could not be rotated")
-		return
-	}
-	result.Active, result.IntegrationKey = true, key
-	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: result.TenantID, EnvironmentID: result.EnvironmentID, ActorType: "platform_admin", Action: "credential.rotated", ResourceType: "credential", ResourceID: strconv.FormatInt(id, 10)})
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handler) revokeCredential(w http.ResponseWriter, r *http.Request) {
-	id, ok := credentialIDFromPath(r.URL.Path, "/revoke")
-	if !ok {
-		writeError(w, http.StatusNotFound, "credential_not_found", "credential was not found")
-		return
-	}
-	var result credentialResponse
-	err := h.db.QueryRow(r.Context(), `
-		UPDATE integration_credentials SET revoked_at = COALESCE(revoked_at, now())
-		WHERE id = $1
-		RETURNING id, tenant_id, environment_id, label, created_at, last_used_at, revoked_at`, id).Scan(&result.ID, &result.TenantID, &result.EnvironmentID, &result.Label, &result.CreatedAt, &result.LastUsedAt, &result.RevokedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "credential_not_found", "credential was not found")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "credential_revocation_failed", "credential could not be revoked")
-		return
-	}
-	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: result.TenantID, EnvironmentID: result.EnvironmentID, ActorType: "platform_admin", Action: "credential.revoked", ResourceType: "credential", ResourceID: strconv.FormatInt(id, 10)})
-	result.Active = false
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) listAuditLog(w http.ResponseWriter, r *http.Request) {
@@ -1750,15 +1545,6 @@ func (h *Handler) assignTenantPlan(w http.ResponseWriter, r *http.Request) {
 	h.limits.Invalidate(request.TenantID)
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: request.TenantID, ActorType: "platform_admin", Action: "tenant_plan.assigned", ResourceType: "tenant_plan", ResourceID: request.TenantID, Metadata: auditMetadata(map[string]any{"plan_id": request.PlanID, "overrides": overrides})})
 	writeJSON(w, http.StatusOK, map[string]any{"tenant_id": request.TenantID, "plan_id": request.PlanID, "overrides": overrides})
-}
-
-func credentialIDFromPath(path, suffix string) (int64, bool) {
-	value := strings.TrimSuffix(strings.TrimPrefix(path, "/v1/admin/credentials/"), suffix)
-	if value == "" || strings.Contains(value, "/") {
-		return 0, false
-	}
-	id, err := strconv.ParseInt(value, 10, 64)
-	return id, err == nil && id > 0
 }
 
 func (h *Handler) createEventType(w http.ResponseWriter, r *http.Request) {
@@ -4005,14 +3791,6 @@ func (h *Handler) updateEngagementResource(w http.ResponseWriter, r *http.Reques
 	}
 	_ = audit.Record(r.Context(), h.db, audit.Entry{TenantID: campaign.TenantID, EnvironmentID: campaign.EnvironmentID, ActorType: "platform_admin", Action: "campaign.updated", ResourceType: "campaign", ResourceID: campaign.ID})
 	writeJSON(w, http.StatusOK, campaign)
-}
-
-func generateIntegrationKey() (string, error) {
-	value := make([]byte, 32)
-	if _, err := rand.Read(value); err != nil {
-		return "", err
-	}
-	return "motif_" + base64.RawURLEncoding.EncodeToString(value), nil
 }
 
 func generateRuleID() (string, error) {

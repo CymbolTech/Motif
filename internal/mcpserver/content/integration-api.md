@@ -1,6 +1,6 @@
 # Integration API reference
 
-These are the routes a product backend calls with the environment's integration key in `X-Motif-API-Key`. The key selects the workspace and environment; never send it from a browser or mobile app.
+These are the routes a product backend calls with an access key in `X-Motif-API-Key`. The key selects the workspace and environment. `GET` routes need the `read` scope and `POST` routes need `write`. A key may list allowed browser origins; requests from any other origin get `403 origin_not_allowed`. Origins only bind browsers, so keep keys that can write on the server.
 
 ## Events
 
@@ -40,4 +40,4 @@ These are the routes a product backend calls with the environment's integration 
 | `GET /v1/redemptions/{redemption_id}` | Redemption status. |
 | `POST /v1/redemptions/{redemption_id}/retry` | Retry a failed or interrupted redemption. |
 
-Errors use `{"error": {"code": "...", "message": "..."}}`. Retry `5xx`, `429` and network errors with the same idempotency key or event ID; do not retry `4xx` unchanged.
+Errors use `{"error": {"code": "...", "message": "..."}}`. A missing or unknown key returns `401`; a key without the needed scope returns `403 insufficient_scope`. Retry `5xx`, `429` and network errors with the same idempotency key or event ID; do not retry `4xx` unchanged.

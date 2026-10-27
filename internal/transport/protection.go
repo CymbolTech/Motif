@@ -28,6 +28,9 @@ type ProtectionConfig struct {
 	AllowedOrigins []string
 	Limiter        *RateLimiter
 	Metrics        *observability.Metrics
+	// KeyCORS selects paths whose browser access each access key decides for
+	// itself. AllowedOrigins does not apply to them.
+	KeyCORS func(path string) bool
 }
 
 func Protect(next http.Handler, cfg ProtectionConfig) http.Handler {
@@ -37,7 +40,7 @@ func Protect(next http.Handler, cfg ProtectionConfig) http.Handler {
 	if cfg.Limiter == nil {
 		cfg.Limiter = NewRateLimiter(30, 60)
 	}
-	return withRequestID(withCORS(withRateLimit(withLogging(withMetrics(next, cfg.Metrics), cfg.Logger), cfg.Limiter), cfg.AllowedOrigins))
+	return withRequestID(withCORS(withRateLimit(withLogging(withMetrics(next, cfg.Metrics), cfg.Logger), cfg.Limiter), cfg.AllowedOrigins, cfg.KeyCORS))
 }
 
 func withMetrics(next http.Handler, metrics *observability.Metrics) http.Handler {
@@ -75,7 +78,7 @@ func newRequestID() string {
 	return hex.EncodeToString(value)
 }
 
-func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
+func withCORS(next http.Handler, allowedOrigins []string, keyCORS func(string) bool) http.Handler {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		origin = strings.TrimSpace(origin)
@@ -84,12 +87,16 @@ func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if keyCORS != nil && keyCORS(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		_, permitted := allowed[origin]
 		if origin != "" && permitted {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Motif-API-Key, X-Motif-Admin-Key, X-Request-ID")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Motif-Admin-Key, X-Request-ID")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		}
 		if r.Method == http.MethodOptions {

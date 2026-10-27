@@ -16,7 +16,7 @@
 | A free in-app unlock | Free `digital_unlock` reward |
 | Weekend double points | A second rule with `starts_at`/`ends_at` in UTC |
 | Undo points on refund | `order.refunded` + a backend `spend` with an idempotency key |
-| Separate test from live | Separate environments and integration keys |
+| Separate test from live | Separate environments, each with its own access keys |
 | Weekly top customers | Leaderboard ranking points earned, recurring weekly or manual rounds |
 | A contest that ends when we say | Manual leaderboard; `start_leaderboard_round` rotates it |
 
