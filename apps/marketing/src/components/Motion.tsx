@@ -1,12 +1,18 @@
 'use client';
 
 import Lenis from 'lenis';
-import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 
 // Page motion: Lenis smooth scrolling, reveals for [data-reveal] blocks, and
 // a slow parallax on the relief plates. Everything stays visible without it;
 // the preflight script in the layout only hides reveal targets once it knows
 // this component will run, and reduced motion skips all of it.
+//
+// This component lives in the root layout, which stays mounted across
+// client-side navigations. Lenis runs once for the whole visit; reveals and
+// plate tracking are rebuilt for every route, so a page reached through a
+// link registers its own blocks instead of leaving them hidden.
 
 declare global {
   interface Window {
@@ -15,12 +21,52 @@ declare global {
 }
 
 export function Motion() {
+  const pathname = usePathname();
+  const lenisRef = useRef<Lenis | null>(null);
+  const driftRef = useRef<() => void>(() => {});
+
+  // Smooth scrolling, once per visit.
   useEffect(() => {
-    const root = document.documentElement;
     window.__motionReady = true;
-    if (!root.classList.contains('motion')) return;
+    if (!document.documentElement.classList.contains('motion')) return;
 
     const lenis = new Lenis({ lerp: 0.1, anchors: { offset: -24 } });
+    lenisRef.current = lenis;
+    let last = -1;
+    let frame = requestAnimationFrame(function raf(time) {
+      lenis.raf(time);
+      if (lenis.animatedScroll !== last) {
+        last = lenis.animatedScroll;
+        driftRef.current();
+      }
+      frame = requestAnimationFrame(raf);
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      lenis.destroy();
+      lenisRef.current = null;
+    };
+  }, []);
+
+  // Reveals and plate drift, once per route.
+  useEffect(() => {
+    if (!document.documentElement.classList.contains('motion')) return;
+
+    // The new page can be taller or shorter than the last one.
+    lenisRef.current?.resize();
+
+    const reveal = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('is-in');
+          reveal.unobserve(entry.target);
+        }
+      },
+      { rootMargin: '0px 0px -12% 0px' },
+    );
+    document.querySelectorAll('[data-reveal]:not(.is-in)').forEach((element) => reveal.observe(element));
 
     // Relief plates drift against the scroll. Plates are tracked from well
     // before they enter the viewport, so the first frame they are visible
@@ -50,37 +96,15 @@ export function Motion() {
       plates.add(plate);
       watch.observe(plate);
     });
+    driftRef.current = drift;
     drift();
 
-    let last = -1;
-    let frame = requestAnimationFrame(function raf(time) {
-      lenis.raf(time);
-      if (lenis.animatedScroll !== last) {
-        last = lenis.animatedScroll;
-        drift();
-      }
-      frame = requestAnimationFrame(raf);
-    });
-
-    const reveal = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          entry.target.classList.add('is-in');
-          reveal.unobserve(entry.target);
-        }
-      },
-      { rootMargin: '0px 0px -12% 0px' },
-    );
-    document.querySelectorAll('[data-reveal]').forEach((element) => reveal.observe(element));
-
     return () => {
-      cancelAnimationFrame(frame);
       reveal.disconnect();
       watch.disconnect();
-      lenis.destroy();
+      driftRef.current = () => {};
     };
-  }, []);
+  }, [pathname]);
 
   return null;
 }
