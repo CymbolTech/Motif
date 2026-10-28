@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 type PlateProps = {
   /** Relief image under public/relief, without extension. */
-  relief: 'hero' | 'track' | 'decide' | 'progress' | 'reward' | 'agents';
+  relief: 'hero' | 'track' | 'decide' | 'agents';
   className?: string;
   priority?: boolean;
   children: ReactNode;

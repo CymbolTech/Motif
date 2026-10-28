@@ -1,6 +1,7 @@
 /* Landing: hero stage, building blocks, feature plates, use cases, FAQ. */
 
 .hero {
+  position: relative;
   padding-top: 88px;
 }
 
@@ -321,7 +322,8 @@
 .legend {
   display: flex;
   gap: 16px;
-  margin-top: 8px;
+  /* Same distance as from the legend down to the level rule below it. */
+  margin-top: 16px;
   color: var(--ink-3);
   font-size: 11px;
   white-space: nowrap;
@@ -1099,7 +1101,7 @@
     border-right: 0;
   }
 
-  .card-head span:last-child {
+  .card-head span:last-child:not(.tag) {
     display: none;
   }
 
@@ -1323,4 +1325,298 @@
 
 .tile:hover .g-pulse {
   animation: g-pulse 0.9s var(--ease) infinite;
+}
+
+/* 03 Progression: a level map the user walks along. */
+
+.map {
+  margin-top: 64px;
+}
+
+.map-scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.map-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.map-inner {
+  min-width: 760px;
+}
+
+.map-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  text-align: center;
+}
+
+
+
+
+.map-track {
+  position: relative;
+  height: 2px;
+  margin: 56px 10% 26px;
+  background: var(--rule-2);
+}
+
+.map-node {
+  position: absolute;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--ink-3);
+  border-radius: 50%;
+  background: var(--ground);
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+.map-node.is-passed {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.map-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--to);
+  height: 100%;
+  background: var(--reward);
+  transition: width 1.8s var(--ease) 0.2s;
+}
+
+.motion .map:not(.is-in) .map-fill {
+  width: 0;
+}
+
+.map-marker {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 2;
+  transform: translate(50%, -50%);
+}
+
+.map-avatar {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--ground);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #cdb8f0, var(--signal) 60%, #2a1746);
+  box-shadow: 0 0 0 1px var(--reward);
+}
+
+.map-you {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  padding: 3px 8px;
+  border: 1px solid var(--rule-2);
+  border-radius: 999px;
+  background: var(--card-solid);
+  color: var(--ink);
+  font-size: 11px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.map-levels li {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.map-levels b {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.map-levels .is-passed b {
+  color: var(--ink);
+}
+
+.map-levels span {
+  color: var(--ink-3);
+}
+
+
+
+
+/* 04 Rewards: one customer's points as four plain steps. */
+
+.points {
+  margin-top: 64px;
+}
+
+.points-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.points-now {
+  color: var(--ink-3);
+}
+
+.points-now b {
+  margin-left: 8px;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 450;
+  letter-spacing: -0.02em;
+}
+
+.points-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.points-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px 24px 28px 0;
+}
+
+.points-steps li + li {
+  padding-left: 24px;
+  border-left: 1px solid var(--rule);
+}
+
+.points-verb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.points-index {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--rule-3);
+  border-radius: 50%;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.points-amount {
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 450;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.is-earn .points-amount {
+  color: var(--reward);
+}
+
+.points-steps p {
+  flex: 1;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.points-after {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.points-after .num {
+  margin-left: 4px;
+  color: var(--ink);
+}
+
+.points-meter {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--rule-2);
+}
+
+.points-meter i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transform-origin: left;
+  transition: transform 1.2s var(--ease) calc(var(--i, 0) * 120ms + 300ms);
+}
+
+.is-earn .points-meter i {
+  background: var(--reward);
+}
+
+.motion .points:not(.is-in) .points-meter i {
+  transform: scaleX(0) !important;
+}
+
+.points-note {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .map-scroll {
+    -webkit-mask: linear-gradient(90deg, #000 85%, transparent);
+    mask: linear-gradient(90deg, #000 85%, transparent);
+  }
+
+
+  .points-steps {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .points-steps li:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .points-steps li:nth-child(n + 3) {
+    border-top: 1px solid var(--rule);
+  }
+}
+
+@media (max-width: 560px) {
+  .points-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .points-steps li,
+  .points-steps li + li {
+    padding: 22px 0;
+    border-left: 0;
+  }
+
+  .points-steps li + li {
+    border-top: 1px solid var(--rule);
+  }
+
+  .points-head {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
+.chart-ring {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
 }

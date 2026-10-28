@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/Icons';
+import { type ChartApi, LiveChart } from '@/components/LiveChart';
 
 // The hero's console card. It replays a short scripted stream of synthetic
 // events so the page shows the engine paying out; nothing here calls the API.
@@ -49,9 +50,11 @@ function useRolling(target: number) {
 export function LiveConsole() {
   const root = useRef<HTMLElement>(null);
   const tick = useRef(0);
+  const chartApi = useRef<ChartApi | null>(null);
   const [xp, setXp] = useState(18420);
   const [loyalty, setLoyalty] = useState(2350);
   const [processed, setProcessed] = useState(48112);
+  const [issued, setIssued] = useState(1204350);
   const [rows, setRows] = useState<Row[]>([
     { key: -1, type: 'lesson.completed', effect: '+50 xp' },
     { key: -2, type: 'order.paid', effect: '+200 loyalty' },
@@ -71,7 +74,10 @@ export function LiveConsole() {
       setRows((current) => [{ key: index, type: event.type, effect: event.effect }, ...current.slice(0, 3)]);
       setXp((value) => (value + event.xp >= NEXT_LEVEL ? 18420 : value + event.xp));
       setLoyalty((value) => value + event.loyalty);
+      setIssued((value) => value + event.loyalty);
       setProcessed((value) => value + 1);
+      // The chart takes the same event: XP lifts the solid line, points the dashed one.
+      chartApi.current?.push(event.xp || 4, event.loyalty ? event.loyalty / 8 : 2);
       if (index % 4 === 3) {
         setAchievement((current) => ({ key: current.key + 1, label: ACHIEVEMENTS[(current.key + 1) % ACHIEVEMENTS.length] }));
       }
@@ -100,6 +106,7 @@ export function LiveConsole() {
   const shownXp = useRolling(xp);
   const shownLoyalty = useRolling(loyalty);
   const shownProcessed = useRolling(processed);
+  const shownIssued = useRolling(issued);
 
   return (
     <figure ref={root} className="card console">
@@ -154,20 +161,10 @@ export function LiveConsole() {
             </div>
             <div className="kpi-end">
               <dt>Points issued</dt>
-              <dd className="num">1.2M</dd>
+              <dd className="num">{format.format(shownIssued)}</dd>
             </div>
           </dl>
-          <svg className="chart" viewBox="0 0 440 170" preserveAspectRatio="none" aria-hidden="true">
-            <defs>
-              <linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stopColor="#f3f3f1" stopOpacity=".1" />
-                <stop offset="1" stopColor="#f3f3f1" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path d="M0 150 L30 146 60 140 90 142 120 128 150 124 180 112 210 116 240 98 270 90 300 82 330 70 360 60 390 44 420 36 440 28 L440 170 0 170Z" fill="url(#chart-fill)" />
-            <path d="M0 150 L30 146 60 140 90 142 120 128 150 124 180 112 210 116 240 98 270 90 300 82 330 70 360 60 390 44 420 36 440 28" fill="none" stroke="#f3f3f1" strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
-            <path d="M0 160 L40 158 80 154 120 150 160 148 200 140 240 136 280 130 320 122 360 118 400 110 440 104" fill="none" stroke="var(--signal-ink)" strokeWidth="1.3" strokeDasharray="3 4" vectorEffect="non-scaling-stroke" />
-          </svg>
+          <LiveChart api={chartApi} />
           <div className="legend">
             <span>
               <i aria-hidden="true" />
@@ -175,7 +172,7 @@ export function LiveConsole() {
             </span>
             <span>
               <i className="legend-signal" aria-hidden="true" />
-              Points redeemed
+              Points issued
             </span>
             <span className="mono legend-note">synthetic data</span>
           </div>

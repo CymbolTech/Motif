@@ -14,6 +14,24 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
 };
 
+const MAP_LEVELS = [
+  { n: 5, name: 'Pro', xp: 10000, earned: true },
+  { n: 6, name: 'Veteran', xp: 14000, earned: true },
+  { n: 7, name: 'Expert', xp: 18000, earned: true },
+  { n: 8, name: 'Master', xp: 22500, earned: false },
+  { n: 9, name: 'Legend', xp: 30000, earned: false },
+];
+
+/** user-42 sits at 18,420 XP: 420 of the 4,500 between level 7 and level 8. */
+const MAP_YOU = (2 + 420 / 4500) / (MAP_LEVELS.length - 1);
+
+const POINT_STORY = [
+  { verb: 'Earn', amount: '+1,500', text: 'Earned on eight orders, set by your rules.', after: 1500 },
+  { verb: 'Convert', amount: '−500', text: 'Swapped for 50 coins at a 10:1 rate.', after: 1000 },
+  { verb: 'Redeem', amount: '−800', text: 'Spent on a 10% coupon, delivered automatically and retried if it fails.', after: 200 },
+  { verb: 'Expire', amount: '−50', text: 'Points older than a year expired. The history stays.', after: 150 },
+];
+
 const STRUCTURED_DATA = {
   '@context': 'https://schema.org',
   '@graph': [
@@ -271,109 +289,69 @@ export default function HomePage() {
           <SectionHead id="progress-title" index="03" label="Progression" title="Give them a reason to come back tomorrow" sub="XP, levels, streaks, missions and achievements">
             Levels show how far someone has come. Missions give them something to finish this week. Achievements mark the milestones. XP is kept apart from spendable points, so levelling up never costs a reward.
           </SectionHead>
-          <Plate relief="progress">
-            <figure className="card duo duo-progress">
-              <figcaption className="sr-only">Example missions and achievements for one user, with synthetic data.</figcaption>
-              <div>
-                <div className="duo-head duo-head-quiet">
-                  <span>Missions</span>
-                  <span>this week</span>
+          <figure className="map" data-reveal style={{ '--to': `${MAP_YOU * 100}%` } as CSSProperties}>
+            <figcaption className="sr-only">An example level map for one user at 18,420 XP between level 7 and level 8, with synthetic data.</figcaption>
+            <div className="map-scroll">
+              <div className="map-inner">
+                <div className="map-track" aria-hidden="true">
+                  {MAP_LEVELS.map((step, i) => (
+                    <i key={step.n} className={`map-node ${step.earned ? 'is-passed' : ''}`} style={{ left: `${(i / (MAP_LEVELS.length - 1)) * 100}%` }} />
+                  ))}
+                  <span className="map-fill">
+                    <span className="map-marker">
+                      <span className="map-avatar" />
+                      <span className="map-you mono">user-42 · 18,420 XP</span>
+                    </span>
+                  </span>
                 </div>
-                <ul className="missions">
-                  {[
-                    ['Finish five lessons', 3, 5],
-                    ['Keep a 7-day streak', 7, 7],
-                    ['Invite a friend', 0, 1],
-                  ].map(([name, done, target]) => (
-                    <li key={name}>
-                      <span>{name}</span>
-                      <span className="mono">
-                        {done} / {target}
-                      </span>
-                      <span className={`bar ${done === target ? 'bar-done' : ''}`} aria-hidden="true">
-                        <i style={{ transform: `scaleX(${Math.max(0.02, Number(done) / Number(target))})` }} />
-                      </span>
+                <ol className="map-row map-levels">
+                  {MAP_LEVELS.map((step) => (
+                    <li key={step.n} className={step.earned ? 'is-passed' : undefined}>
+                      <b>
+                        Level {step.n} · {step.name}
+                      </b>
+                      <span className="mono">{step.xp.toLocaleString('en-US')} XP</span>
                     </li>
                   ))}
-                </ul>
+                </ol>
               </div>
-              <div>
-                <div className="duo-head duo-head-quiet">
-                  <span>Achievements</span>
-                  <span className="mono">3 / 8</span>
-                </div>
-                <ul className="badges">
-                  {BADGES.map((path, index) => (
-                    <li key={index} className={index < 3 ? 'badge-earned' : undefined}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke={index === 2 ? 'var(--reward)' : 'currentColor'} strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
-                        <path d={path} />
-                      </svg>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </figure>
-          </Plate>
+            </div>
+          </figure>
         </section>
 
         <section className="feature wrap" aria-labelledby="reward-title" data-earn="read.rewards:20">
-          <SectionHead id="reward-title" index="04" label="Loyalty and rewards" title="Points worth playing for" sub="loyalty points, every balance backed by an append-only ledger">
-            Run loyalty points, coins and credits side by side. Convert between them, expire old points without rewriting history, and deliver coupons through your own providers with reservation, retry and recovery built in.
+          <SectionHead id="reward-title" index="04" label="Loyalty and rewards" title="Points worth playing for" sub="loyalty points people earn, swap and spend">
+            Give customers points for what they do, let them trade points for coins or coupons, and expire old points on schedule. Motif keeps every balance correct along the way.
           </SectionHead>
-          <Plate relief="reward">
-            <figure className="card duo duo-ledger">
-              <figcaption className="sr-only">An example loyalty ledger and a reward redemption in progress, with synthetic data.</figcaption>
-              <div>
-                <div className="duo-head duo-head-quiet">
-                  <span>Ledger · user-42 · loyalty</span>
-                  <span className="mono">2,350</span>
-                </div>
-                <table className="ledger">
-                  <tbody>
-                    {[
-                      ['Oct 27 14:02', 'Second purchase bonus', 'earn', '+200'],
-                      ['Oct 26 09:15', 'Converted to coins (10:1)', 'convert', '−500'],
-                      ['Oct 24 18:40', 'Redeemed: 10% coupon', 'spend', '−1,000'],
-                      ['Oct 01 00:00', 'Expired from Q2 balance', 'expire', '−120'],
-                    ].map(([when, what, kind, amount]) => (
-                      <tr key={when}>
-                        <td className="ledger-when">{when}</td>
-                        <td>{what}</td>
-                        <td>
-                          <span className="tag">{kind}</span>
-                        </td>
-                        <td className={`mono ledger-amount ${kind === 'expire' ? 'ledger-expire' : ''}`}>{amount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div>
-                <div className="duo-head duo-head-quiet">
-                  <span>Redemption · coupon</span>
-                  <span className="mono">rdm_7Q…</span>
-                </div>
-                <ol className="steps">
-                  <li className="step-done">
-                    <i aria-hidden="true" />
-                    Points reserved<span className="mono">1,000</span>
-                  </li>
-                  <li className="step-done">
-                    <i aria-hidden="true" />
-                    Sent to provider<span className="mono">http</span>
-                  </li>
-                  <li className="step-now">
-                    <i aria-hidden="true" />
-                    Delivering<span className="mono">retryable</span>
-                  </li>
-                  <li>
-                    <i aria-hidden="true" />
-                    Fulfilled
-                  </li>
-                </ol>
-              </div>
-            </figure>
-          </Plate>
+          <figure className="points" data-reveal>
+            <figcaption className="points-head">
+              <span>One customer’s loyalty points, start to finish</span>
+              <span className="points-now">
+                Balance now <b className="num">150</b>
+              </span>
+            </figcaption>
+            <ol className="points-steps">
+              {POINT_STORY.map((step, index) => (
+                <li key={step.verb} className={`is-${step.verb.toLowerCase()}`} style={{ '--i': index } as CSSProperties}>
+                  <span className="points-verb">
+                    <span className="points-index num">{index + 1}</span>
+                    {step.verb}
+                  </span>
+                  <b className="points-amount num">{step.amount}</b>
+                  <p>{step.text}</p>
+                  <span className="points-after">
+                    <span className="points-meter" aria-hidden="true">
+                      <i style={{ transform: `scaleX(${step.after / 1500})` }} />
+                    </span>
+                    <span>
+                      Balance <span className="num">{step.after.toLocaleString('en-US')}</span>
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <p className="points-note">Every change is saved as its own line and never edited, so the balance always adds up.</p>
+          </figure>
         </section>
 
         <section className="feature wrap" aria-labelledby="agents-title" data-earn="read.agents:20">
@@ -479,14 +457,3 @@ export default function HomePage() {
     </>
   );
 }
-
-const BADGES = [
-  'M5 12a7 7 0 1 0 14 0 7 7 0 1 0-14 0M9 12l2 2 4-4',
-  'M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z',
-  'M5 19V9l7-5 7 5v10z',
-  'M4 14l5-5 4 4 7-7',
-  'M4 12a8 8 0 1 0 16 0 8 8 0 1 0-16 0M12 7v5l3 2',
-  'M6 4h12v6a6 6 0 0 1-12 0zM12 16v4M8 20h8',
-  'M12 21s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.5-7 10-7 10z',
-  'M4 18l8-14 8 14z',
-];
