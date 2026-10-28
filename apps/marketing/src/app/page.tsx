@@ -87,7 +87,7 @@ export default function HomePage() {
             <span>Gamification and loyalty as an API.</span>
           </h1>
           <div className="ctas">
-            <a className="pill" href={DASHBOARD_URL}>
+            <a className="pill" href={DASHBOARD_URL} data-start>
               Start building
               <Chevron />
             </a>
@@ -118,12 +118,12 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section id="building-blocks" className="blocks wrap" aria-labelledby="blocks-title">
+        <section id="building-blocks" className="blocks wrap" aria-labelledby="blocks-title" data-earn="read.blocks:15">
           <div className="head" data-reveal>
             <h2 id="blocks-title" className="h2">
-              Everything a gamification program needs
+              Pick your power-ups
               <br />
-              <span>ten building blocks, one API, nothing to build in-house</span>
+              <span>ten building blocks for any gamification program, one API</span>
             </h2>
             <p className="lead lead-flush">
               Pick the blocks your product needs today and add the rest later. They share one event stream and one ledger, so a finished lesson can grant XP, tick a mission and unlock a badge at once.
@@ -145,13 +145,13 @@ export default function HomePage() {
           </ul>
         </section>
 
-        <section id="how-it-works" className="wrap" aria-labelledby="fits-title">
+        <section id="how-it-works" className="wrap" aria-labelledby="fits-title" data-earn="read.how:15">
           <div className="fits" data-reveal>
           <div>
             <h2 id="fits-title" className="h2">
-              Live in three calls
+              Three calls to level one
               <br />
-              <span>your backend talks to Motif, your app shows the result</span>
+              <span>your backend talks to Motif, your app shows the score</span>
             </h2>
             <p className="lead">Send what happened, let your rules decide, read what each user earned. Motif runs the workers, the ledger and the retries.</p>
             <Link className="text-link" href="/docs#quickstart">
@@ -173,8 +173,8 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="feature wrap" aria-labelledby="track-title">
-          <SectionHead id="track-title" index="01" label="Event tracking" title="Everything users do can count" sub="one event call, from any backend">
+        <section className="feature wrap" aria-labelledby="track-title" data-earn="read.track:20">
+          <SectionHead id="track-title" index="01" label="Event tracking" title="Every move counts" sub="one event call, from any backend">
             Send Motif the moments that matter: a paid order, a finished lesson, a daily check-in. Each event is checked against its schema, stored once and processed in the background, so a retried request never pays out twice.
           </SectionHead>
           <Plate relief="track">
@@ -208,8 +208,8 @@ export default function HomePage() {
           </Plate>
         </section>
 
-        <section className="feature wrap" aria-labelledby="decide-title">
-          <SectionHead id="decide-title" index="02" label="Rules engine" title="Change what earns without shipping code" sub="rules your product team can read, try in sandbox and publish">
+        <section className="feature wrap" aria-labelledby="decide-title" data-earn="read.rules:20">
+          <SectionHead id="decide-title" index="02" label="Rules engine" title="Change the rules of the game, not your code" sub="rules your product team can read, test in sandbox and publish">
             Write a rule the way you would say it: when an order is paid, if it is the second one, give 200 points and 50 XP. Publish a new version whenever the program changes. Every decision is logged.
           </SectionHead>
           <Plate relief="decide">
@@ -267,8 +267,8 @@ export default function HomePage() {
           </Plate>
         </section>
 
-        <section className="feature wrap" aria-labelledby="progress-title">
-          <SectionHead id="progress-title" index="03" label="Progression" title="Keep people coming back" sub="XP, levels, streaks, missions and achievements">
+        <section className="feature wrap" aria-labelledby="progress-title" data-earn="read.progress:20">
+          <SectionHead id="progress-title" index="03" label="Progression" title="Give them a reason to come back tomorrow" sub="XP, levels, streaks, missions and achievements">
             Levels show how far someone has come. Missions give them something to finish this week. Achievements mark the milestones. XP is kept apart from spendable points, so levelling up never costs a reward.
           </SectionHead>
           <Plate relief="progress">
@@ -316,8 +316,8 @@ export default function HomePage() {
           </Plate>
         </section>
 
-        <section className="feature wrap" aria-labelledby="reward-title">
-          <SectionHead id="reward-title" index="04" label="Loyalty and rewards" title="Loyalty points you can stand behind" sub="every balance backed by an append-only ledger">
+        <section className="feature wrap" aria-labelledby="reward-title" data-earn="read.rewards:20">
+          <SectionHead id="reward-title" index="04" label="Loyalty and rewards" title="Points worth playing for" sub="loyalty points, every balance backed by an append-only ledger">
             Run loyalty points, coins and credits side by side. Convert between them, expire old points without rewriting history, and deliver coupons through your own providers with reservation, retry and recovery built in.
           </SectionHead>
           <Plate relief="reward">
@@ -376,8 +376,8 @@ export default function HomePage() {
           </Plate>
         </section>
 
-        <section className="feature wrap" aria-labelledby="agents-title">
-          <SectionHead id="agents-title" index="05" label="AI agents" title="Run your program by asking" sub="a Motif MCP server for your workspace">
+        <section className="feature wrap" aria-labelledby="agents-title" data-earn="read.agents:20">
+          <SectionHead id="agents-title" index="05" label="AI agents" title="Let your agent run the game" sub="a Motif MCP server for your workspace">
             Connect Claude Code, Cursor or any MCP client with a scoped access token. Check a rule against a sample payload, send a test event and see what it awarded, or start next week’s leaderboard round in plain language.
           </SectionHead>
           <Plate relief="agents">
@@ -411,7 +411,7 @@ export default function HomePage() {
           </Plate>
         </section>
 
-        <section id="use-cases" className="feature wrap" aria-labelledby="uses-title">
+        <section id="use-cases" className="feature wrap" aria-labelledby="uses-title" data-earn="read.uses:15">
           <div className="head" data-reveal>
             <p className="head-label">
               <span className="head-index">06</span>Use cases
@@ -432,7 +432,7 @@ export default function HomePage() {
           </ul>
         </section>
 
-        <section id="faq" className="feature wrap" aria-labelledby="faq-title">
+        <section id="faq" className="feature wrap" aria-labelledby="faq-title" data-earn="read.faq:15">
           <div className="head" data-reveal>
             <p className="head-label">
               <span className="head-index">07</span>Questions
@@ -458,14 +458,14 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section className="close wrap" aria-labelledby="close-title">
+        <section className="close wrap" aria-labelledby="close-title" data-earn="read.close:25">
           <h2 id="close-title" className="h1" data-reveal>
-            Start rewarding what users already do
+            Player one, press start
             <br />
             <span>Send your first event to sandbox and watch it pay out</span>
           </h2>
           <div className="ctas ctas-center" data-reveal style={{ '--i': 2 } as CSSProperties}>
-            <a className="pill" href={DASHBOARD_URL}>
+            <a className="pill" href={DASHBOARD_URL} data-start>
               Start building
               <Chevron />
             </a>

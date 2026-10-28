@@ -87,7 +87,7 @@ export default function DocsPage() {
           </nav>
 
           <div className="docs-content">
-            <section id="quickstart" className="docs-section" aria-labelledby="quickstart-title" data-reveal>
+            <section id="quickstart" className="docs-section" aria-labelledby="quickstart-title" data-reveal data-earn="docs.quickstart:10">
               <h2 id="quickstart-title" className="h2">
                 Quickstart
               </h2>
@@ -107,7 +107,7 @@ export default function DocsPage() {
               </ol>
             </section>
 
-            <section id="concepts" className="docs-section" aria-labelledby="concepts-title" data-reveal>
+            <section id="concepts" className="docs-section" aria-labelledby="concepts-title" data-reveal data-earn="docs.concepts:10">
               <h2 id="concepts-title" className="h2">
                 Concepts
               </h2>
@@ -121,7 +121,7 @@ export default function DocsPage() {
               </dl>
             </section>
 
-            <section id="rule-language" className="docs-section" aria-labelledby="rule-language-title" data-reveal>
+            <section id="rule-language" className="docs-section" aria-labelledby="rule-language-title" data-reveal data-earn="docs.rule-language:10">
               <h2 id="rule-language-title" className="h2">
                 Rule language
               </h2>
@@ -177,7 +177,7 @@ export default function DocsPage() {
             </section>
 
             {GUIDES.map((guide) => (
-              <section key={guide.id} id={guide.id} className="docs-section" aria-labelledby={`${guide.id}-title`} data-reveal>
+              <section key={guide.id} id={guide.id} className="docs-section" aria-labelledby={`${guide.id}-title`} data-reveal data-earn={`docs.${guide.id}:10`}>
                 <h2 id={`${guide.id}-title`} className="h2">
                   {guide.title}
                 </h2>
@@ -196,7 +196,7 @@ export default function DocsPage() {
                 <br />
                 <span>Create a workspace and send your first event to sandbox.</span>
               </h2>
-              <a className="pill" href={DASHBOARD_URL}>
+              <a className="pill" href={DASHBOARD_URL} data-start>
                 Start building
                 <Chevron />
               </a>

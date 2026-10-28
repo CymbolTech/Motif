@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import type { ReactNode } from 'react';
+import { Game } from '@/components/Game';
 import { Motion, MOTION_PREFLIGHT } from '@/components/Motion';
 import { COMPANY, DESCRIPTION, KEYWORDS, SITE_NAME, SITE_URL, TITLE } from '@/lib/site';
 import 'lenis/dist/lenis.css';
@@ -90,6 +91,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION) }} />
         {children}
         <Motion />
+        <Game />
       </body>
     </html>
   );

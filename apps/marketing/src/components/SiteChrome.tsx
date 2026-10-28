@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Arrow, Chevron, Logo } from '@/components/Icons';
+import { RunPill } from '@/components/RunPill';
 import { COMPANY, DASHBOARD_URL, NAV, SITE_NAME } from '@/lib/site';
 
 export function SiteHeader() {
@@ -29,10 +30,11 @@ export function SiteHeader() {
           </ul>
         </nav>
         <div className="nav-actions">
+          <RunPill />
           <a className="nav-signin" href={DASHBOARD_URL}>
             Sign in
           </a>
-          <a className="pill" href={DASHBOARD_URL}>
+          <a className="pill" href={DASHBOARD_URL} data-start>
             Start building
             <Chevron />
           </a>
